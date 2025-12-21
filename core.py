@@ -9,11 +9,15 @@ class YtDlpCore:
         self.stop_signal = False
 
     def fetch_video_info(self, url, cookie_type='none', cookie_path=''):
-        import yt_dlp
+        try:
+            import yt_dlp
+        except ImportError:
+            return {'error': "CORE_MISSING"}
         ydl_opts = {
             'skip_download': True, 
             'quiet': True, 
             'no_warnings': True,
+            'noplaylist': True,
         }
 
         # 支援多種瀏覽器 Cookie 讀取
@@ -51,7 +55,11 @@ class YtDlpCore:
         return ansi_escape.sub('', text)
 
     def _progress_hook(self, d, progress_callback, log_callback, title_callback=None):
-        import yt_dlp
+        try:
+            import yt_dlp
+        except ImportError:
+            return 
+
         if self.stop_signal: raise yt_dlp.utils.DownloadError("使用者手動停止下載")
         
         if d['status'] == 'downloading':
@@ -61,8 +69,14 @@ class YtDlpCore:
                 try:
                     full_path = d.get('filename', '')
                     base = os.path.basename(full_path)
+                    # Remove .part
+                    if base.endswith('.part'): base = base[:-5]
+                    # Remove extension
                     root, _ = os.path.splitext(base)
-                    # If using part file, remove .part (rarely needed if we just take root)
+                    # Remove Typical yt-dlp format suffix like .f137, .f251 using Regex
+                    # Pattern: .f followed by digits, optionally followed by another extension part
+                    root = re.sub(r'\.f[0-9]{2,}(?:\.[a-z0-9]+)?$', '', root)
+                    
                     if root: title_callback(root)
                 except: pass
 
@@ -75,7 +89,7 @@ class YtDlpCore:
                     downloaded_mb = downloaded / 1024 / 1024
                     speed = self._remove_ansi(d.get('_speed_str', 'N/A'))
                     # 傳送 -1 代表直播模式
-                    if progress_callback: progress_callback(-1, f"🔴 直播錄製中 | 已錄: {downloaded_mb:.1f}MB | 速度: {speed}")
+                    if progress_callback: progress_callback(-1, f"直播錄製中 | 已錄: {downloaded_mb:.1f}MB | 速度: {speed}")
                 else:
                     progress = downloaded / total
                     speed = self._remove_ansi(d.get('_speed_str', 'N/A'))
@@ -90,7 +104,13 @@ class YtDlpCore:
             if log_callback: log_callback(f"檔案下載完畢，正在執行 FFmpeg 處理...")
 
     def _run_download(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
-        import yt_dlp
+        try:
+            import yt_dlp
+        except ImportError:
+            self.is_downloading = False
+            if finish_callback: finish_callback(False, "核心遺失: 未安裝 yt-dlp，請至設定頁面執行更新。")
+            return
+
         # 鎖定程式所在目錄尋找 ffmpeg
         script_dir = os.path.dirname(os.path.abspath(__file__))
         ffmpeg_loc = None

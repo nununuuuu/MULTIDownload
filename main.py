@@ -8,8 +8,32 @@ import uuid
 import time 
 
 
-from LANGUAGE_MAP import CODE_TO_NAME 
-import yt_dlp 
+import json
+
+# --- Load Language Map from External JSON ---
+# This reduces the exe size and allows external editing
+CODE_TO_NAME = {}
+try:
+    # Determine path (handle frozen/dev env)
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    lang_file = os.path.join(base_path, 'languages.json')
+    
+    if os.path.exists(lang_file):
+        with open(lang_file, 'r', encoding='utf-8') as f:
+            CODE_TO_NAME = json.load(f)
+    else:
+        # Minimal Fallback if file missing
+        CODE_TO_NAME = {'zh-TW': '繁體中文 (預設)', 'en': 'English'}
+except Exception:
+    CODE_TO_NAME = {'zh-TW': '繁體中文 (預設)', 'en': 'English'} 
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None 
 import webbrowser 
 
 # --- 支援外部 Library 覆蓋 ---
@@ -108,6 +132,7 @@ class App(ctk.CTk):
         self.downloading = False 
         self.download_queue = [] 
         self.active_queue_tasks = {}
+        self.last_loaded_subtitles = None # Cache to prevent redraw
         self.max_concurrent_downloads = 1 
         self.bg_tasks = {}       
 
@@ -204,8 +229,8 @@ class App(ctk.CTk):
         # 提示文字移至輸入框下方
         ctk.CTkLabel(self.tab_basic, text="提示：直播影片推薦勾選「獨立執行」，可於背景下載避免卡住排程", font=self.font_small, text_color="#1F6AA5").pack(anchor="w", padx=25, pady=(0, 5))
         
-        btn_fetch = ctk.CTkButton(self.tab_basic, text="分析網址 (獲取字幕)", font=self.font_btn, command=self.on_fetch_info)
-        btn_fetch.pack(padx=20, pady=5)
+        self.btn_analyze = ctk.CTkButton(self.tab_basic, text="分析網址 (獲取字幕)", font=self.font_btn, command=self.on_fetch_info)
+        self.btn_analyze.pack(padx=20, pady=5)
 
         # Path
         ctk.CTkLabel(self.tab_basic, text="下載位置", font=self.font_title).pack(anchor="w", padx=20, pady=(20, 5))
@@ -570,10 +595,22 @@ class App(ctk.CTk):
         row = ctk.CTkFrame(self.view_active)
         row.pack(fill="x", pady=5, padx=5)
 
+    
+        btn_frame = ctk.CTkFrame(row, fg_color="transparent")
+        btn_frame.pack(side="right", padx=5)
+
+        btn_cancel = ctk.CTkButton(btn_frame, text="中止", width=50, fg_color="#DB3E39", hover_color="#8B0000", 
+                                   command=lambda: self.cancel_task(task_id))
+        btn_cancel.pack(side="left", padx=2)
+
+        progress = ctk.CTkProgressBar(row, height=12, width=150) 
+        progress.pack(side="right", padx=10, pady=15)
+        progress.set(0)
+
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
         info_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
         
-        # Determine Display Name & Mode
+        
         display_name = config.get('filename')
         is_using_url_as_title = False
         
@@ -590,7 +627,6 @@ class App(ctk.CTk):
         lbl_title = ctk.CTkLabel(info_frame, text=display_name, font=("Microsoft JhengHei UI", 13, "bold"), anchor="w")
         lbl_title.pack(fill="x")
         
-        # Display URL below title (Only if different AND display_name is not just the URL)
         if config['url'] != display_name and not is_using_url_as_title:
             url_text = config['url']
             if len(url_text) > 70: url_text = url_text[:67] + "..."
@@ -603,19 +639,7 @@ class App(ctk.CTk):
         
         lbl_status = ctk.CTkLabel(info_frame, text=initial_status, text_color="#2CC985", font=("Consolas", 12), anchor="w")
         lbl_status.pack(fill="x")
-        
-        progress = ctk.CTkProgressBar(row, height=10, width=200)
-        progress.pack(side="right", padx=10, pady=15)
-        progress.set(0)
-        
-        # Buttons Frame
-        btn_frame = ctk.CTkFrame(row, fg_color="transparent")
-        btn_frame.pack(side="right", padx=5)
-
-        btn_cancel = ctk.CTkButton(btn_frame, text="中止", width=50, fg_color="#DB3E39", hover_color="#8B0000", 
-                                   command=lambda: self.cancel_task(task_id))
-        btn_cancel.pack(side="left", padx=2)
-        
+    
         def on_double_click(event):
             self.toggle_pause_task(task_id)
             
@@ -664,6 +688,14 @@ class App(ctk.CTk):
              self._start_core_download(info['config'], task_id=task_id)
 
     def cancel_task(self, task_id):
+        # Immediate UI Feedback
+        if task_id in self.active_task_widgets:
+             try:
+                 w = self.active_task_widgets[task_id]
+                 w['lbl_status'].configure(text="正在中止...", text_color="#DB3E39")
+                 w['btn_cancel'].configure(state="disabled", text="...")
+             except: pass
+
         if task_id in self.active_queue_tasks:
              self.active_queue_tasks[task_id]['status'] = 'cancelled'
              try: 
@@ -683,16 +715,26 @@ class App(ctk.CTk):
             self.lbl_active_empty.pack(pady=20)
 
     def update_task_widget(self, task_id, percent, msg):
-        if task_id in self.active_task_widgets:
-            w = self.active_task_widgets[task_id]
-            w['lbl_status'].configure(text=msg)
-            if percent == -1:
-                w['progress'].configure(mode="indeterminate")
-                w['progress'].start()
-            else:
-                w['progress'].configure(mode="determinate")
-                w['progress'].stop()
-                w['progress'].set(percent)
+        def _update():
+            # Double check existence to prevent TclError
+            if task_id in self.active_task_widgets:
+                w = self.active_task_widgets[task_id]
+                try:
+                    if not w['lbl_status'].winfo_exists(): return
+                    
+                    w['lbl_status'].configure(text=msg)
+                    if percent == -1:
+                        w['progress'].configure(mode="indeterminate")
+                        w['progress'].start()
+                    else:
+                        w['progress'].configure(mode="determinate")
+                        try: w['progress'].stop()
+                        except: pass
+                        w['progress'].set(percent)
+                except Exception as e:
+                    print(f"UI Update Error: {e}")
+        
+        self.after(0, _update)
 
     def add_history_item(self, config, success, msg):
         self.history_data.append({'config': config, 'success': success, 'msg': msg})
@@ -820,8 +862,14 @@ class App(ctk.CTk):
         def _update_ui():
             if 'error' in info:
                 self.show_toast("分析失敗", color="#EA0000")
-                self.log(f"錯誤: {info['error']}")
-                if "Sign in" in info['error']: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
+                err_msg = info['error']
+                self.log(f"錯誤: {err_msg}")
+                
+                if err_msg == "CORE_MISSING":
+                    messagebox.showerror("核心遺失", "未安裝 yt-dlp 核心組件！\n無法進行分析或下載。\n\n請稍後在「設定」頁面點擊「檢查並更新」安裝。")
+                    self.tab_view.set("設定")
+                    
+                elif "Sign in" in err_msg: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
             else:
                 if info['subtitles']:
                     self.show_toast("分析成功！")
@@ -829,16 +877,24 @@ class App(ctk.CTk):
                     self.show_toast("分析成功，無可用字幕")
                 
                 self.log(f"已獲取資訊: {info['title']}")
-                self.update_subtitles_ui(info['subtitles'])
+                self.after(50, lambda: self.update_subtitles_ui(info['subtitles']))
         
         self.after(0, _update_ui)
 
     def update_subtitles_ui(self, sub_list):
-        for widget in self.scroll_subs.winfo_children(): widget.destroy()
-        self.sub_checkboxes.clear()
-        if not sub_list: 
-            ctk.CTkLabel(self.scroll_subs, text="無可用字幕", font=self.font_text).pack()
+        current_set = sorted(sub_list) if sub_list else []
+        if self.last_loaded_subtitles == current_set:
             return
+        self.last_loaded_subtitles = current_set
+
+
+        self.sub_checkboxes.clear()
+        
+        if not sub_list: 
+             for widget in self.scroll_subs.winfo_children(): widget.destroy()
+             ctk.CTkLabel(self.scroll_subs, text="無可用字幕", font=self.font_text).pack()
+             return
+
         PRIORITY_LANGS = ['zh-TW', 'zh-Hant', 'zh-HK', 'zh-Hans', 'zh-CN', 'en', 'en-US', 'en-GB', 'ja', 'ko']
         priority_matches = []
         other_matches = []
@@ -847,23 +903,60 @@ class App(ctk.CTk):
             else: other_matches.append(code)
         priority_matches.sort(key=lambda x: PRIORITY_LANGS.index(x))
         other_matches.sort()
-        def add_checkbox(code):
+
+        bulk_frame = ctk.CTkFrame(self.scroll_subs, fg_color="transparent")
+
+        def create_chk(parent, code):
             lang_name = CODE_TO_NAME.get(code)
             display_text = f"★ [{code}] {lang_name}" if lang_name and code in PRIORITY_LANGS else (f"[{code}] {lang_name}" if lang_name else f"[{code}] (未知語言)")
+            if len(display_text) > 20: display_text = display_text[:18] + ".."
+            
             var = ctk.BooleanVar()
-            chk = ctk.CTkCheckBox(self.scroll_subs, text=display_text, variable=var, font=self.font_text)
-            chk.pack(anchor="w", padx=10, pady=2)
             self.sub_checkboxes[code] = var
-        if priority_matches:
-            ctk.CTkLabel(self.scroll_subs, text="--- 推薦語言 ---", text_color="gray", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
-            for code in priority_matches: add_checkbox(code)
-        if priority_matches and other_matches: ctk.CTkFrame(self.scroll_subs, height=2, fg_color="#555555").pack(fill="x", padx=10, pady=10)
-        if other_matches:
-            if priority_matches: ctk.CTkLabel(self.scroll_subs, text="--- 其他語言 ---", text_color="gray", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
-            for code in other_matches: add_checkbox(code)
+            return ctk.CTkCheckBox(parent, text=display_text, variable=var, font=self.font_text, width=20) 
 
+
+        if priority_matches:
+            ctk.CTkLabel(bulk_frame, text="推薦", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
+            for code in priority_matches:
+                create_chk(bulk_frame, code).pack(anchor="w", padx=10, pady=2)
+
+        if priority_matches and other_matches: 
+            ctk.CTkFrame(bulk_frame, height=2, fg_color="#555555").pack(fill="x", padx=10, pady=10)
+
+        if other_matches:
+            if priority_matches: 
+                ctk.CTkLabel(bulk_frame, text="其他", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
+            
+            cols = 4
+            current_row_frame = None
+            
+            for i, code in enumerate(other_matches):
+                if i % cols == 0:
+                    current_row_frame = ctk.CTkFrame(bulk_frame, fg_color="transparent")
+                    current_row_frame.pack(fill="x", padx=5, pady=2)
+                
+                cell_frame = ctk.CTkFrame(current_row_frame, width=170, height=30, fg_color="transparent")
+                cell_frame.pack_propagate(False) 
+                cell_frame.pack(side="left", padx=5)
+                
+                chk = create_chk(cell_frame, code)
+                chk.pack(side="left", anchor="w")
+
+
+        # 6. Finally, switch the view atomically
+        for widget in self.scroll_subs.winfo_children(): 
+            if widget != bulk_frame: 
+                # Crucial Fix: Unmap first to stop rendering/resize events
+                try: widget.pack_forget()
+                except: pass
+                # Then destroy
+                widget.destroy()
+        
+        # Now pack the new frame
+        
     def get_selected_subs(self):
-        return [lang for lang, var in self.sub_checkboxes.items() if var.get()]
+         return [lang for lang, var in self.sub_checkboxes.items() if var.get()]
 
     def get_config_from_ui(self):
         url = self.entry_url.get().strip()
@@ -902,10 +995,9 @@ class App(ctk.CTk):
         config = self.get_config_from_ui()
         if not config: return
         
-        # Auto-fetch title in background if not present (or if it's the default "Not Analyzed" text)
         current_def_title = config.get('default_title', '')
         if not config.get('filename') and (not current_def_title or current_def_title in ["尚未分析", "分析中..."]):
-             config['default_title'] = "正在獲取標題..." # Set initial state
+             config['default_title'] = "正在獲取標題..." 
              threading.Thread(target=self._auto_fetch_title, args=(config,), daemon=True).start()
 
         # 加入佇列
@@ -919,46 +1011,48 @@ class App(ctk.CTk):
         # 清空輸入與重置分析狀態
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
-        self.update_subtitles_ui([]) # Clear subtitles
+        self.update_subtitles_ui([]) 
 
     def _auto_fetch_title(self, config):
         """Background thread to fetch title for waiting tasks"""
-        core = YtDlpCore() # Use separate instance
+        core = YtDlpCore()
         try:
             info = core.fetch_video_info(config['url'], config['cookie_type'], config['cookie_path'])
             
             if info and 'title' in info and info['title'] != '未知標題':
                 config['default_title'] = info['title']
             else:
-                # Failed to fetch, clear default_title to fallback to URL
                 config['default_title'] = "" 
             
-            # Update UI on main thread
             self.after(0, self.update_queue_ui)
         except: 
             config['default_title'] = ""
             self.after(0, self.update_queue_ui)
 
     def show_toast(self, message, duration=2000, color="#01814A"):
-        # Create a top-level window for the toast
+        if hasattr(self, 'current_toast') and self.current_toast:
+            try: self.current_toast.destroy()
+            except: pass
+            
         toast = ctk.CTkToplevel(self)
-        toast.overrideredirect(True) # Remove window decorations
+        self.current_toast = toast 
         
-        # Position top-right relative to main window
+        toast.overrideredirect(True) 
+        
         x = self.winfo_x() + self.winfo_width() - 220
         y = self.winfo_y() + 85
         toast.geometry(f"200x50+{x}+{y}")
         toast.attributes("-alpha", 1.0)
-        toast.attributes("-topmost", True) # Keep on top
+        toast.attributes("-topmost", True)
         
-        # Toast Content
         frame = ctk.CTkFrame(toast, fg_color=color, corner_radius=10)
         frame.pack(fill="both", expand=True)
         
         label = ctk.CTkLabel(frame, text=message, text_color="white", font=("Microsoft JhengHei UI", 14, "bold"))
         label.pack(expand=True)
         
-        # Auto close
+        toast.update_idletasks()
+        
         def close_toast():
             try: toast.destroy()
             except: pass
@@ -1000,11 +1094,10 @@ class App(ctk.CTk):
             return
 
         # --- 一般排程邏輯 ---
-        # 加入佇列 (Starts immediately)
         self.download_queue.append(config)
         self.log(f"已加入排程並開始: {config['url']}")
         self.update_queue_ui()
-        self.check_queue() # 檢查並啟動
+        self.check_queue() 
         
         # 提示切換
         self.tab_view.set("任務列表")
@@ -1027,7 +1120,6 @@ class App(ctk.CTk):
             self.btn_download.configure(state="disabled", text="下載中...")
             self.lbl_status.configure(text=msg)
         elif active_count == 0 and queue_count == 0:
-             # 只有當原本是下載中狀態，才顯示完成
             if self.downloading:
                 self.downloading = False
                 self.btn_download.configure(state="normal", text="開始下載")
@@ -1044,17 +1136,14 @@ class App(ctk.CTk):
     def _start_core_download(self, config, task_id=None):
         if not task_id: task_id = str(uuid.uuid4())
         
-        # 如果是恢復任務，可能已經有 widget
         is_resume = task_id in self.active_task_widgets
         
-        # Check for existing data to preserve last_percent
         last_percent = 0
         if task_id in self.active_queue_tasks:
              last_percent = self.active_queue_tasks[task_id].get('last_percent', 0)
 
         core = YtDlpCore()
         
-        # Store full info
         self.active_queue_tasks[task_id] = {
             'core': core,
             'config': config,
@@ -1065,7 +1154,6 @@ class App(ctk.CTk):
         if not is_resume:
             self.create_active_task_widget(task_id, config, "排程任務啟動中...")
         else:
-             # Update existing widget to running state (restore visual progress if possible)
              msg = "恢復下載中..."
              if last_percent > 0: msg = f"恢復下載中 ({int(last_percent*100)}%)..."
              self.update_task_widget(task_id, last_percent if last_percent > 0 else 0, msg)
@@ -1077,22 +1165,16 @@ class App(ctk.CTk):
         
         self.log(f"啟動排程任務: {config['url']}")
         
-        # Callback to update title when real filename is known
         def update_title_callback(real_title):
-            # Only update if user didn't provide a custom filename
             if not config.get('filename'):
-                # Update config (for history) - Thread safe (dict)
                 self.active_queue_tasks[task_id]['config']['default_title'] = real_title
                 config['default_title'] = real_title
                 
-                # Update UI - Must be on Main Thread
                 def _update_ui():
                     if task_id in self.active_task_widgets:
-                        # Update Title Label
                         if len(real_title) > 60: real_title_disp = real_title[:57] + "..."
                         else: real_title_disp = real_title
                         
-                        # Use the stored reference to update title
                         if 'lbl_title' in self.active_task_widgets[task_id]:
                              self.active_task_widgets[task_id]['lbl_title'].configure(text=real_title_disp)
                 
@@ -1109,6 +1191,10 @@ class App(ctk.CTk):
     def update_background_progress(self, task_id, percent, msg):
         if task_id in self.bg_tasks:
             self.bg_tasks[task_id]['status'] = msg
+            # Create widget if not exists (handling race condition where start callback hits before widget creation returns)
+            if task_id not in self.active_task_widgets:
+                 # Try to recover or just ignore until fully created
+                 pass 
             self.update_task_widget(task_id, percent, msg)
 
     def on_stop_download(self):
@@ -1128,15 +1214,12 @@ class App(ctk.CTk):
             self.check_queue()
 
     def update_progress(self, percent, msg, task_id):
-        # Store progress
         if task_id in self.active_queue_tasks:
              self.active_queue_tasks[task_id]['last_percent'] = percent
 
-        # Throttling Check (Update max 10 times per second)
         current_time = time.time()
         last_time = self.task_last_update_time.get(task_id, 0)
         
-        # Always update if finished/starting/error or if time elapsed > 0.1s
         should_update = (
             (current_time - last_time > 0.1) or 
             percent == -1 or 
@@ -1147,7 +1230,6 @@ class App(ctk.CTk):
 
         if should_update:
             self.task_last_update_time[task_id] = current_time
-            # Update task widget
             self.update_task_widget(task_id, percent, msg)
 
         # 多任務時，進度條顯示最近活動的任務，或者保持忙碌狀態
@@ -1170,22 +1252,19 @@ class App(ctk.CTk):
                 # 狀態文字只在單任務時更新詳細資訊，避免跳動
                 if len(self.active_queue_tasks) <= 1:
                     if "合併" in msg or "轉檔" in msg: self.lbl_status.configure(text="合併轉檔中...")
-                    else: self.lbl_status.configure(text=f"下載中: {int(percent * 100)}%")
+                    else: self.lbl_status.configure(text=f"下載中：{int(percent * 100)}%")
         except: pass
 
     def on_download_finished(self, success, msg, task_id, config):
-        # 1. Check task state
         current_status = 'unknown'
         if task_id in self.active_queue_tasks:
             current_status = self.active_queue_tasks[task_id].get('status', 'finished')
 
-        # 2. If Paused
         if current_status == 'paused':
             self.log(f"[已暫停] {msg}")
             
-            # Stop animation by setting determinate mode with last percent
             last_p = self.active_queue_tasks[task_id].get('last_percent', 0)
-            if last_p < 0: last_p = 0 # Prevent indeterminate mode
+            if last_p < 0: last_p = 0
             self.update_task_widget(task_id, last_p, "已暫停 (雙擊繼續)")
             
             self._update_task_buttons(task_id, 'paused')
@@ -1196,27 +1275,27 @@ class App(ctk.CTk):
         
         self.log(f"[{status_prefix}] {msg}")
         
-        # 移除已完成任務 (Cancelled or Finished)
+        # 移除已完成任務
         if task_id in self.active_queue_tasks:
             self.active_queue_tasks.pop(task_id)
         
         # 移除 UI Widget
         self.remove_active_task_widget(task_id)
         
-        # 加入歷史 (Cancelled tasks also go to history? User pref. Let's add them.)
-        final_msg = "使用者取消" if current_status == 'cancelled' else msg
+        # 加入歷史 
+        final_msg = "已取消" if current_status == 'cancelled' else msg
         self.add_history_item(config, success, final_msg)
             
         if not success and current_status != 'cancelled':
-             self.log(f"排程任務錯誤: {msg}") # 不彈窗以免中斷後續任務
+             self.log(f"排程任務錯誤: {msg}") 
 
         # 觸發檢查隊列，看是否需要啟動下一個
         self.after(500, self.check_queue)
         
         if not self.active_queue_tasks and not self.download_queue:
             self.progress_bar.configure(mode="determinate")
-            self.progress_bar.set(0) # Reset progress
-            self.lbl_status.configure(text="準備就緒") # Reset status text
+            self.progress_bar.set(0) 
+            self.lbl_status.configure(text="準備就緒")
             if success: messagebox.showinfo("完成", "所有排程任務已完成！")
 
 
@@ -1341,7 +1420,7 @@ class App(ctk.CTk):
                 with open(current_file, "r", encoding="utf-8") as f:
                     content = f.read()
                 
-                # 2. 替換設定變數 (使用正則表達式精確替換)
+                # 2. 替換設定變數 
                 new_line = f'DEFAULT_APPEARANCE_MODE = "{selected}"'
                 new_content = re.sub(r'DEFAULT_APPEARANCE_MODE = ".*?"', new_line, content, count=1)
                 
@@ -1361,26 +1440,27 @@ class App(ctk.CTk):
             
         ctk.CTkButton(settings_frame, text="套用並重啟", font=self.font_btn, height=40, command=apply_theme).pack(pady=(40, 20))
 
-        # 自動更新按鈕
+        # 自動更新
         self.btn_update = ctk.CTkButton(settings_frame, text="檢查並更新yt-dlp", font=self.font_btn, fg_color="gray", hover_color="#555555", command=self.check_for_updates)
         self.btn_update.pack(pady=(0, 20))
 
 
-        # 先 Pack 連結，讓它沉在最底下
         def open_releases(event=None):
             webbrowser.open("https://github.com/yt-dlp/yt-dlp/releases")
             
         lbl_release = ctk.CTkLabel(settings_frame, text="手動更新 yt-dlp", font=self.font_small, text_color="#3B8ED0", cursor="hand2")
-        lbl_release.pack(side="bottom", pady=(0, 20)) # 底部留白多一點
+        lbl_release.pack(side="bottom", pady=(0, 20)) 
         lbl_release.bind("<Button-1>", open_releases)
         lbl_release.bind("<Enter>", lambda e: lbl_release.configure(text_color="#1F6AA5"))
         lbl_release.bind("<Leave>", lambda e: lbl_release.configure(text_color="#3B8ED0"))
 
-        # 再 Pack 版本號，它會疊在連結上面
         try:
-            version_text = f"yt-dlp版本: {yt_dlp.version.__version__}"
+            if yt_dlp:
+                 version_text = f"yt-dlp版本 - {yt_dlp.version.__version__}"
+            else:
+                 version_text = "yt-dlp版本 - 未安裝 (請點擊上方按鈕安裝)"
         except:
-            version_text = "版本: 未知"
+            version_text = "yt-dlp版本 - 未知"
             
         ctk.CTkLabel(settings_frame, text=version_text, font=self.font_small, text_color="gray").pack(side="bottom", pady=(5, 0))
 
