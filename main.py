@@ -289,9 +289,23 @@ class App(ctk.CTk):
                 url_text = config['url']
                 if len(url_text) > 60: url_text = url_text[:57] + "..."
                 ctk.CTkLabel(info_frame, text=url_text, text_color="gray", font=("Consolas", 10), anchor="w").pack(fill="x")
+            
+            # Task Details (Format, Subs, Cut)
+            meta_parts = []
+            # 1. Format & Quality
+            q_str = config.get('audio_qual', '').split(' ')[0] if config.get('is_audio_only') else config.get('video_res', '').split(' ')[0]
+            if not q_str: q_str = "?"
+            meta_parts.append(f"{config['ext']} ({q_str})")
+            
+            # 2. Tags
+            if config.get('sub_langs'): meta_parts.append("字幕")
+            if config.get('use_time_range'): meta_parts.append("時間裁剪")
+            
+            details_text = " | ".join(meta_parts)
+            ctk.CTkLabel(info_frame, text=details_text, text_color="#888888", font=self.font_small, anchor="w").pack(fill="x")
 
             # Ext
-            ctk.CTkLabel(row, text=f"[{config['ext']}]", text_color="gray", font=self.font_small).pack(side="left", padx=5)
+            # Ext label removed (merged into details)
 
             ctk.CTkButton(
                 row, text="✕", width=30, height=20, fg_color="transparent", hover_color="#8B0000", text_color="red", 
