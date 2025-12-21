@@ -473,11 +473,11 @@ class App(ctk.CTk):
         CTkToolTip(lbl_help, help_text)
         file_frame = ctk.CTkFrame(self.tab_adv, fg_color="transparent")
         file_frame.pack(fill="x", padx=20)
-        ctk.CTkRadioButton(file_frame, text="檔案路徑:", font=self.font_text, variable=self.var_cookie, value="file").pack(side="left", padx=(20, 10))
+        ctk.CTkRadioButton(file_frame, text="檔案路徑", font=self.font_text, variable=self.var_cookie, value="file").pack(side="left", padx=(20, 10))
         self.entry_cookie_path = ctk.CTkEntry(file_frame, font=self.font_text, placeholder_text="請選擇 cookies.txt...")
         self.entry_cookie_path.pack(side="left", fill="x", expand=True, padx=10)
         self.entry_cookie_path.pack(side="left", fill="x", expand=True, padx=10)
-        ctk.CTkButton(file_frame, text="瀏覽", width=60, font=self.font_text, command=self.browse_cookie_file).pack(side="right")
+        ctk.CTkButton(file_frame, text="瀏覽", width=80, font=self.font_btn, command=self.browse_cookie_file).pack(side="right")
 
 
 
@@ -536,7 +536,7 @@ class App(ctk.CTk):
         self.lbl_finished_empty = ctk.CTkLabel(self.view_finished, text="目前沒有已完成的紀錄", text_color="gray", font=self.font_text)
         self.lbl_finished_empty.pack(pady=20)
         
-        self.btn_clear_history = ctk.CTkButton(self.tab_tasks, text="清除歷史紀錄", fg_color="gray", command=self.clear_history)
+        self.btn_clear_history = ctk.CTkButton(self.tab_tasks, text="清除歷史紀錄", fg_color="gray", font=self.font_btn, command=self.clear_history)
 
     def switch_task_view(self, value):
         self.view_waiting.pack_forget()
@@ -754,7 +754,17 @@ class App(ctk.CTk):
 
     def setup_log_ui(self):
         self.textbox_log = ctk.CTkTextbox(self.tab_log, state="disabled", font=("Consolas", 12))
-        self.textbox_log.pack(fill="both", expand=True, padx=10, pady=10)
+        self.textbox_log.pack(fill="both", expand=True, padx=10, pady=(10, 5))
+        
+        btn_clear = ctk.CTkButton(self.tab_log, text="清空日誌", width=100, height=30, 
+                                  fg_color="gray", hover_color="#555555", font=self.font_btn,
+                                  command=self.clear_log)
+        btn_clear.pack(pady=(0, 10), anchor="e", padx=10)
+
+    def clear_log(self):
+        self.textbox_log.configure(state="normal")
+        self.textbox_log.delete("0.0", "end")
+        self.textbox_log.configure(state="disabled")
 
     # --- 邏輯功能 ---
     def log(self, message):
@@ -1227,7 +1237,7 @@ class App(ctk.CTk):
 
                 if parse_version(latest_version) <= parse_version(current_version):
                     self.after(0, lambda: messagebox.showinfo("檢查更新", f"版本已為最新版本 ({current_version})"))
-                    self.after(0, lambda: self.btn_update.configure(state="normal", text="檢查更新yt-dlp"))
+                    self.after(0, lambda: self.btn_update.configure(state="normal", text="檢查更新yt-dlp",hover_color="#555555"))
                     return
 
                 # 詢問是否更新
@@ -1338,7 +1348,7 @@ class App(ctk.CTk):
         ctk.CTkButton(settings_frame, text="套用並重啟", font=self.font_btn, height=40, command=apply_theme).pack(pady=(40, 20))
 
         # 自動更新按鈕
-        self.btn_update = ctk.CTkButton(settings_frame, text="檢查並更新yt-dlp", font=self.font_text, fg_color="#555555", hover_color="#333333", command=self.check_for_updates)
+        self.btn_update = ctk.CTkButton(settings_frame, text="檢查並更新yt-dlp", font=self.font_btn, fg_color="gray", hover_color="#555555", command=self.check_for_updates)
         self.btn_update.pack(pady=(0, 20))
 
 
