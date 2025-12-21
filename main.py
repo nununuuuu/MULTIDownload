@@ -557,7 +557,7 @@ class App(ctk.CTk):
         if not url: return messagebox.showwarning("提示", "網址不能為空")
 
         raw_path = self.entry_path.get().strip()
-        final_save_path = raw_path if raw_path else os.path.dirname(os.path.abspath(__file__))
+        final_save_path = raw_path if raw_path else app_path
 
         raw_format = self.combo_format.get() 
         selected_ext = raw_format.split(' ')[0]
