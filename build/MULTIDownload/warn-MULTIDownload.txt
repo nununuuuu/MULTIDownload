@@ -1,0 +1,87 @@
+
+This file lists modules PyInstaller was not able to find. This does not
+necessarily mean this module is required for running your program. Python and
+Python 3rd-party packages include a lot of conditional or optional modules. For
+example the module 'ntpath' only exists on Windows, whereas the module
+'posixpath' only exists on Posix systems.
+
+Types if import:
+* top-level: imported at the top-level - look at these first
+* conditional: imported within an if-statement
+* delayed: imported within a function
+* optional: imported within a try-except-statement
+
+IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for
+            tracking down the missing module yourself. Thanks!
+
+missing module named _posixshmem - imported by multiprocessing.resource_tracker (conditional), multiprocessing.shared_memory (conditional)
+missing module named 'org.python' - imported by copy (optional), xml.sax (delayed, conditional)
+missing module named 'java.lang' - imported by platform (delayed, optional), xml.sax._exceptions (conditional)
+missing module named multiprocessing.BufferTooShort - imported by multiprocessing (top-level), multiprocessing.connection (top-level)
+missing module named multiprocessing.AuthenticationError - imported by multiprocessing (top-level), multiprocessing.connection (top-level)
+missing module named _posixsubprocess - imported by subprocess (conditional), multiprocessing.util (delayed)
+missing module named grp - imported by shutil (delayed, optional), tarfile (optional), pathlib (delayed, optional), subprocess (delayed, conditional, optional)
+missing module named pwd - imported by posixpath (delayed, conditional, optional), shutil (delayed, optional), tarfile (optional), pathlib (delayed, optional), subprocess (delayed, conditional, optional), getpass (delayed), netrc (delayed, conditional), webbrowser (delayed), http.server (delayed, optional)
+missing module named posix - imported by posixpath (optional), shutil (conditional), importlib._bootstrap_external (conditional), os (conditional, optional)
+missing module named resource - imported by posix (top-level)
+missing module named _frozen_importlib_external - imported by importlib._bootstrap (delayed), importlib (optional), importlib.abc (optional), zipimport (top-level)
+excluded module named _frozen_importlib - imported by importlib (optional), importlib.abc (optional), zipimport (top-level)
+missing module named org - imported by pickle (optional)
+missing module named multiprocessing.get_context - imported by multiprocessing (top-level), multiprocessing.pool (top-level), multiprocessing.managers (top-level), multiprocessing.sharedctypes (top-level)
+missing module named multiprocessing.TimeoutError - imported by multiprocessing (top-level), multiprocessing.pool (top-level)
+missing module named multiprocessing.set_start_method - imported by multiprocessing (top-level), multiprocessing.spawn (top-level)
+missing module named multiprocessing.get_start_method - imported by multiprocessing (top-level), multiprocessing.spawn (top-level)
+missing module named pyimod02_importers - imported by C:\mypython\MULTIDownload\.venv\Lib\site-packages\PyInstaller\hooks\rthooks\pyi_rth_pkgutil.py (delayed)
+missing module named _scproxy - imported by urllib.request (conditional)
+missing module named termios - imported by getpass (optional), tty (top-level)
+missing module named curl_cffi - imported by yt_dlp.dependencies (optional), yt_dlp (top-level)
+missing module named secretstorage - imported by yt_dlp.dependencies (optional), yt_dlp (top-level)
+missing module named certifi - imported by yt_dlp.dependencies (optional), yt_dlp (top-level)
+missing module named brotli - imported by yt_dlp.dependencies (optional), yt_dlp (top-level)
+missing module named mutagen - imported by yt_dlp.dependencies (optional), yt_dlp (top-level)
+missing module named Cryptodome - imported by yt_dlp.dependencies.Cryptodome (conditional, optional), yt_dlp (top-level)
+missing module named 'curl_cffi.const' - imported by yt_dlp.networking._curlcffi (top-level)
+missing module named 'curl_cffi.requests' - imported by yt_dlp.networking._curlcffi (top-level)
+missing module named yt_dlp_ejs - imported by yt_dlp.dependencies (optional)
+missing module named 'Crypto.PublicKey' - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named 'Crypto.Hash' - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named 'Crypto.Cipher' - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named 'Cryptodome.PublicKey' - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named 'Cryptodome.Hash' - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named 'Cryptodome.Cipher' - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named Crypto - imported by yt_dlp.dependencies.Cryptodome (conditional, optional)
+missing module named xattr - imported by yt_dlp.dependencies (optional)
+missing module named requests - imported by yt_dlp.dependencies (optional)
+missing module named urllib3 - imported by yt_dlp.dependencies (optional)
+missing module named websockets - imported by yt_dlp.dependencies (optional)
+missing module named brotlicffi - imported by yt_dlp.dependencies (optional)
+missing module named 'websockets.uri' - imported by yt_dlp.networking._websockets (top-level)
+missing module named 'websockets.sync' - imported by yt_dlp.networking._websockets (top-level)
+missing module named 'websockets.version' - imported by yt_dlp.networking._websockets (top-level)
+missing module named 'urllib3.util' - imported by yt_dlp.networking._requests (top-level)
+missing module named 'urllib3.exceptions' - imported by yt_dlp.networking._requests (top-level)
+missing module named 'urllib3.connection' - imported by yt_dlp.networking._requests (top-level)
+missing module named 'requests.utils' - imported by yt_dlp.networking._requests (top-level)
+missing module named 'requests.adapters' - imported by yt_dlp.networking._requests (top-level)
+missing module named yt_dlp.utils.deprecation_warning - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.networking.common (top-level), yt_dlp.downloader.common (top-level), yt_dlp.postprocessor.common (top-level), yt_dlp.postprocessor.ffmpeg (top-level), yt_dlp.extractor.common (top-level), yt_dlp.YoutubeDL (top-level), yt_dlp.postprocessor (top-level), yt_dlp.options (top-level)
+missing module named vms_lib - imported by platform (delayed, optional)
+missing module named java - imported by platform (delayed)
+missing module named _winreg - imported by platform (delayed, optional)
+missing module named asyncio.DefaultEventLoopPolicy - imported by asyncio (delayed, conditional), asyncio.events (delayed, conditional)
+missing module named yt_dlp.utils.remove_end - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.extractor.youtube._video (top-level), yt_dlp.extractor.allocine (top-level), yt_dlp.extractor.biobiochiletv (top-level), yt_dlp.extractor.charlierose (top-level), yt_dlp.extractor.crtvg (top-level), yt_dlp.extractor.senategov (top-level), yt_dlp.extractor.dispeak (top-level), yt_dlp.extractor.ebay (top-level), yt_dlp.extractor.gamestar (top-level), yt_dlp.extractor.gopro (top-level), yt_dlp.extractor.hellporno (top-level), yt_dlp.extractor.hungama (top-level), yt_dlp.extractor.icareus (top-level), yt_dlp.extractor.lifenews (top-level), yt_dlp.extractor.mailru (top-level), yt_dlp.extractor.mediastream (top-level), yt_dlp.extractor.mojevideo (top-level), yt_dlp.extractor.motherless (top-level), yt_dlp.extractor.murrtube (top-level), yt_dlp.extractor.nbc (top-level), yt_dlp.extractor.ndtv (top-level), yt_dlp.extractor.nhk (top-level), yt_dlp.extractor.nitter (top-level), yt_dlp.extractor.nytimes (top-level), yt_dlp.extractor.nzonscreen (top-level), yt_dlp.extractor.orf (top-level), yt_dlp.extractor.pinkbike (top-level), yt_dlp.extractor.rheinmaintv (top-level), yt_dlp.extractor.teamtreehouse (top-level), yt_dlp.extractor.theholetv (top-level), yt_dlp.extractor.tv2 (top-level), yt_dlp.extractor.tvw (top-level), yt_dlp.extractor.twitter (top-level), yt_dlp.extractor.viu (top-level), yt_dlp.extractor.vuclip (top-level), yt_dlp.extractor.yfanefa (top-level), yt_dlp.downloader.external (top-level), yt_dlp.options (top-level)
+missing module named yt_dlp.utils.Popen - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.cookies (top-level), yt_dlp.postprocessor.ffmpeg (top-level), yt_dlp.postprocessor.embedthumbnail (top-level), yt_dlp.postprocessor.exec (top-level), yt_dlp.downloader.rtmp (top-level), yt_dlp.extractor.common (top-level), yt_dlp.extractor.youtube.jsc._builtin.bun (top-level), yt_dlp.extractor.youtube.jsc._builtin.deno (top-level), yt_dlp.extractor.youtube.jsc._builtin.node (top-level), yt_dlp.extractor.youtube.jsc._builtin.quickjs (top-level), yt_dlp.extractor.openload (top-level), yt_dlp.YoutubeDL (top-level), yt_dlp.downloader.external (top-level)
+missing module named 'yt_dlp_ejs.yt' - imported by yt_dlp.extractor.youtube.jsc._builtin.ejs (conditional)
+missing module named yt_dlp.utils.version_tuple - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.cache (top-level), yt_dlp.extractor.youtube.jsc._builtin.ejs (top-level)
+missing module named fcntl - imported by subprocess (optional), yt_dlp.utils._utils (conditional, optional), pty (delayed, optional)
+missing module named yt_dlp.utils.system_identifier - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.YoutubeDL (top-level)
+missing module named yt_dlp.utils.shell_quote - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.downloader.common (top-level), yt_dlp.postprocessor.ffmpeg (top-level), yt_dlp.postprocessor.embedthumbnail (top-level), yt_dlp.postprocessor.exec (top-level), yt_dlp.extractor.openload (top-level), yt_dlp.YoutubeDL (top-level), yt_dlp (top-level), yt_dlp.compat._deprecated (delayed)
+missing module named yt_dlp.utils.format_field - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.extractor.common (top-level), yt_dlp.extractor.youtube.pot._director (top-level), yt_dlp.extractor.youtube._video (top-level), yt_dlp.extractor.youtube._tab (top-level), yt_dlp.extractor.generic (top-level), yt_dlp.extractor.acfun (top-level), yt_dlp.extractor.arnes (top-level), yt_dlp.extractor.awaan (top-level), yt_dlp.extractor.kaltura (top-level), yt_dlp.extractor.banbye (top-level), yt_dlp.extractor.bandlab (top-level), yt_dlp.extractor.bibeltv (top-level), yt_dlp.extractor.bilibili (top-level), yt_dlp.extractor.bitchute (top-level), yt_dlp.extractor.bluesky (top-level), yt_dlp.extractor.bundestag (top-level), yt_dlp.extractor.facebook (top-level), yt_dlp.extractor.cbsnews (top-level), yt_dlp.extractor.openload (top-level), yt_dlp.extractor.flickr (top-level), yt_dlp.extractor.floatplane (top-level), yt_dlp.extractor.francetv (top-level), yt_dlp.extractor.rumble (top-level), yt_dlp.extractor.gamejolt (top-level), yt_dlp.extractor.instagram (top-level), yt_dlp.extractor.iqiyi (top-level), yt_dlp.extractor.joj (top-level), yt_dlp.extractor.vidio (top-level), yt_dlp.extractor.livestreamfails (top-level), yt_dlp.extractor.lnk (top-level), yt_dlp.extractor.minds (top-level), yt_dlp.extractor.musicdex (top-level), yt_dlp.extractor.nubilesporn (top-level), yt_dlp.extractor.peertube (top-level), yt_dlp.extractor.pornhub (top-level), yt_dlp.extractor.radlive (top-level), yt_dlp.extractor.rokfin (top-level), yt_dlp.extractor.servus (top-level), yt_dlp.extractor.storyfire (top-level), yt_dlp.extractor.telegram (top-level), yt_dlp.extractor.telewebion (top-level), yt_dlp.extractor.tiktok (top-level), yt_dlp.extractor.trovo (top-level), yt_dlp.extractor.truth (top-level), yt_dlp.extractor.tube8 (top-level), yt_dlp.extractor.twitter (top-level), yt_dlp.extractor.vidlii (top-level), yt_dlp.extractor.wykop (top-level), yt_dlp.extractor.younow (top-level), yt_dlp.extractor.zhihu (top-level), yt_dlp.YoutubeDL (top-level), yt_dlp.options (top-level), yt_dlp (top-level)
+missing module named yt_dlp.utils.NO_DEFAULT - imported by yt_dlp.utils (top-level), yt_dlp.update (top-level), yt_dlp.downloader (top-level), yt_dlp.downloader.common (top-level), yt_dlp.extractor.common (top-level), yt_dlp.extractor.youtube.pot._provider (top-level), yt_dlp.extractor.youtube._video (top-level), yt_dlp.extractor.youtube._tab (top-level), yt_dlp.extractor.adobepass (top-level), yt_dlp.extractor.onet (top-level), yt_dlp.extractor.drtuber (top-level), yt_dlp.extractor.heise (top-level), yt_dlp.extractor.pornhub (top-level), yt_dlp.extractor.tvn24 (top-level), yt_dlp.jsinterp (top-level), yt_dlp.extractor.xnxx (top-level), yt_dlp.YoutubeDL (top-level), yt_dlp (top-level)
+missing module named 'mutagen.oggvorbis' - imported by yt_dlp.postprocessor.embedthumbnail (conditional)
+missing module named 'mutagen.oggopus' - imported by yt_dlp.postprocessor.embedthumbnail (conditional)
+missing module named 'mutagen.mp4' - imported by yt_dlp.postprocessor.embedthumbnail (conditional)
+missing module named 'mutagen.flac' - imported by yt_dlp.postprocessor.embedthumbnail (conditional)
+missing module named PIL - imported by customtkinter.windows.widgets.image.ctk_image (optional)
+missing module named typing_extensions - imported by customtkinter.windows.widgets.font.ctk_font (optional), customtkinter.windows.widgets.scaling.scaling_base_class (optional), customtkinter.windows.widgets.core_widget_classes.ctk_base_class (optional), customtkinter.windows.widgets.ctk_progressbar (optional), customtkinter.windows.widgets.ctk_segmented_button (optional), customtkinter.windows.widgets.ctk_scrollable_frame (optional)
+missing module named PyObjCTools - imported by darkdetect._mac_detect (optional)
+missing module named Foundation - imported by darkdetect._mac_detect (optional)

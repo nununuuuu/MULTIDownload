@@ -1,11 +1,14 @@
 import sys
 import os
+import subprocess
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from core import YtDlpCore 
 import threading
 import uuid
 import time 
+import webbrowser
+
 
 
 import json
@@ -30,21 +33,20 @@ try:
         CODE_TO_NAME = {'zh-TW': '繁體中文 (預設)', 'en': 'English'}
 except Exception:
     CODE_TO_NAME = {'zh-TW': '繁體中文 (預設)', 'en': 'English'} 
-try:
-    import yt_dlp
-except ImportError:
-    yt_dlp = None 
-import webbrowser 
-
 # --- 支援外部 Library 覆蓋 ---
 if getattr(sys, 'frozen', False):
-    app_path = os.path.dirname(os.path.dirname(sys.executable))
+    app_path = os.path.dirname(sys.executable)
 else:
     app_path = os.path.dirname(os.path.abspath(__file__))
 
 lib_path = os.path.join(app_path, 'lib')
 if os.path.exists(lib_path):
     sys.path.insert(0, lib_path)
+
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None 
 
 
 # --- 設定：預設外觀模式 (請勿手動修改格式，程式會自動更新此行) ---
@@ -118,6 +120,18 @@ class App(ctk.CTk):
         super().__init__()
         self.title("MULTIDownload")
         self.geometry("800x780") 
+        
+        try:
+            if hasattr(sys, '_MEIPASS'):
+                 # PyInstaller 打包後的暫存路徑
+                 icon_path = os.path.join(sys._MEIPASS, "1.ico")
+            else:
+                 # 開發環境路徑
+                 icon_path = r"C:\mypython\MULTIDownload\icon\1.ico"
+            
+            if os.path.exists(icon_path):
+                 self.iconbitmap(icon_path)
+        except Exception: pass 
         
         ctk.set_appearance_mode(DEFAULT_APPEARANCE_MODE)
         
@@ -1319,7 +1333,10 @@ class App(ctk.CTk):
                     data = json.loads(response.read().decode())
                     latest_version = data['info']['version']
                 
-                current_version = yt_dlp.version.__version__
+                if yt_dlp:
+                     current_version = yt_dlp.version.__version__
+                else:
+                     current_version = "0.0.0" 
                 
                 # 版本號比對函數
                 def parse_version(v_str):
@@ -1371,15 +1388,16 @@ class App(ctk.CTk):
                         if member.startswith('yt_dlp/'):
                             zip_ref.extract(member, lib_dir)
                 
-                # 更新成功後的處理
+                 # 更新成功後的處理
                 def on_success():
                     messagebox.showinfo("更新成功", f"yt-dlp 已更新至 {latest_version}！\n\n點擊確定將自動重啟應用程式以生效。")
                     # 重啟應用程式
-                    self.destroy()
                     import subprocess
                     current_file = sys.executable if getattr(sys, 'frozen', False) else __file__
+                    # 啟動新進程
                     subprocess.Popen([sys.executable, current_file] if not getattr(sys, 'frozen', False) else [current_file])
-                    sys.exit(0)
+                    # 強制結束目前進程 (避免清理時報錯)
+                    os._exit(0)
 
                 self.after(0, on_success)
 
