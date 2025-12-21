@@ -1,7 +1,7 @@
-import yt_dlp
 import threading
 import os
 import re
+import time
 
 class YtDlpCore:
     def __init__(self):
@@ -9,11 +9,11 @@ class YtDlpCore:
         self.stop_signal = False
 
     def fetch_video_info(self, url, cookie_type='none', cookie_path=''):
+        import yt_dlp
         ydl_opts = {
             'skip_download': True, 
             'quiet': True, 
             'no_warnings': True,
-            'restrictfilenames': True, 
         }
 
         # 支援多種瀏覽器 Cookie 讀取
@@ -38,11 +38,11 @@ class YtDlpCore:
     def stop_download(self):
         self.stop_signal = True
 
-    def start_download_thread(self, config, progress_callback, log_callback, finish_callback):
+    def start_download_thread(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
         if self.is_downloading: return
         self.stop_signal = False
         self.is_downloading = True
-        thread = threading.Thread(target=self._run_download, args=(config, progress_callback, log_callback, finish_callback))
+        thread = threading.Thread(target=self._run_download, args=(config, progress_callback, log_callback, finish_callback, title_callback))
         thread.daemon = True
         thread.start()
 
@@ -50,10 +50,22 @@ class YtDlpCore:
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
         return ansi_escape.sub('', text)
 
-    def _progress_hook(self, d, progress_callback, log_callback):
+    def _progress_hook(self, d, progress_callback, log_callback, title_callback=None):
+        import yt_dlp
         if self.stop_signal: raise yt_dlp.utils.DownloadError("使用者手動停止下載")
         
         if d['status'] == 'downloading':
+            # Try to report title if available (and not done yet)
+            if title_callback:
+                # Extract filename without path and extension as the "Title"
+                try:
+                    full_path = d.get('filename', '')
+                    base = os.path.basename(full_path)
+                    root, _ = os.path.splitext(base)
+                    # If using part file, remove .part (rarely needed if we just take root)
+                    if root: title_callback(root)
+                except: pass
+
             try:
                 total = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
@@ -77,19 +89,23 @@ class YtDlpCore:
             if progress_callback: progress_callback(0.99, "合併轉檔中 (修復音訊)...") 
             if log_callback: log_callback(f"檔案下載完畢，正在執行 FFmpeg 處理...")
 
-    def _run_download(self, config, progress_callback, log_callback, finish_callback):
+    def _run_download(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
+        import yt_dlp
         # 鎖定程式所在目錄尋找 ffmpeg
         script_dir = os.path.dirname(os.path.abspath(__file__))
         ffmpeg_loc = None
         if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')): ffmpeg_loc = script_dir
         elif os.path.exists(os.path.join(script_dir, 'ffmpeg')): ffmpeg_loc = script_dir
+        
+        # Ensure config has save_path
+        if not config.get('save_path'): config['save_path'] = os.getcwd()
 
         opts = {
             'outtmpl': os.path.join(config['save_path'], f"{config['filename']}.%(ext)s" if config['filename'] else "%(title)s.%(ext)s"),
-            'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, log_callback)],
+            'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, log_callback, title_callback)],
             'noplaylist': True, 'continuedl': True, 'overwrites': True,
             'ffmpeg_location': ffmpeg_loc,
-            'restrictfilenames': True, 'windowsfilenames': True, 'trim_file_name': 200,     
+            'windowsfilenames': True, 'trim_file_name': 200,     
             'quiet': True, 'no_warnings': True,
         }
 
@@ -160,8 +176,6 @@ class YtDlpCore:
         success = False
         message = ""
         max_retries = 3
-        import time
-        
         for attempt in range(max_retries):
             try:
                 if attempt == 0:
