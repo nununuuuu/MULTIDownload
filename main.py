@@ -14,10 +14,8 @@ import webbrowser
 import json
 
 # --- Load Language Map from External JSON ---
-# This reduces the exe size and allows external editing
 CODE_TO_NAME = {}
 try:
-    # Determine path (handle frozen/dev env)
     if getattr(sys, 'frozen', False):
         base_path = os.path.dirname(sys.executable)
     else:
@@ -29,7 +27,6 @@ try:
         with open(lang_file, 'r', encoding='utf-8') as f:
             CODE_TO_NAME = json.load(f)
     else:
-        # Minimal Fallback if file missing
         CODE_TO_NAME = {'zh-TW': '繁體中文 (預設)', 'en': 'English'}
 except Exception:
     CODE_TO_NAME = {'zh-TW': '繁體中文 (預設)', 'en': 'English'} 
@@ -146,7 +143,7 @@ class App(ctk.CTk):
         self.downloading = False 
         self.download_queue = [] 
         self.active_queue_tasks = {}
-        self.last_loaded_subtitles = None # Cache to prevent redraw
+        self.last_loaded_subtitles = None 
         self.max_concurrent_downloads = 1 
         self.bg_tasks = {}       
 
@@ -212,6 +209,7 @@ class App(ctk.CTk):
             self.bottom_frame, text="獨立執行", font=self.font_small, width=20, variable=self.var_independent
         )
         self.chk_independent.grid(row=0, column=2, padx=(10, 5))
+        CTkToolTip(self.chk_independent, "勾選後，將不加入排程，直接在背景獨立開始下載。\n適合需要長時間下載的任務(如直播)或臨時想插隊下載一個檔案。")
 
         # 下載按鈕 (直接開始 - 加入並執行)
         self.btn_download = ctk.CTkButton(
@@ -332,9 +330,36 @@ class App(ctk.CTk):
             # Task Details (Format, Subs, Cut)
             meta_parts = []
             # 1. Format & Quality
-            q_str = config.get('audio_qual', '').split(' ')[0] if config.get('is_audio_only') else config.get('video_res', '').split(' ')[0]
-            if not q_str: q_str = "?"
-            meta_parts.append(f"{config['ext']} ({q_str})")
+            # 1. Format & Quality
+            ext = config['ext']
+            if config.get('is_audio_only'):
+                # Audio: mp3 (320kbps)
+                 qual = config.get('audio_qual', 'Best').split(' ')[0]
+                 codec = config.get('audio_codec', 'Auto').split(' ')[0]
+                 meta = f"{ext} ({qual})"
+                 if codec and codec != "Auto": meta += f" [{codec}]"
+                 meta_parts.append(meta)
+            else:
+                # Video: mp4 (1080p) [H.264] + Audio (192kbps) [AAC]
+                res = config.get('video_res', 'Best').split(' ')[0]
+                
+                # Video part
+                v_meta = f"{ext} ({res})"
+                if config.get('use_h264_legacy'): v_meta += " [H.264]"
+                
+                # Audio part (for video downloads)
+                a_qual = config.get('audio_qual', 'Best').split(' ')[0]
+                a_codec = config.get('audio_codec', 'Auto').split(' ')[0]
+                
+                a_meta = ""
+                # Only show audio details if user selected specific settings (not default Best/Auto)
+                is_default_audio = (a_qual == "Best" and a_codec == "Auto")
+                
+                if not is_default_audio:
+                    a_meta = f" + ({a_qual})"
+                    if a_codec != "Auto": a_meta += f" [{a_codec}]"
+                
+                meta_parts.append(v_meta + a_meta)
             
             # 2. Tags
             if config.get('sub_langs'): meta_parts.append("字幕")
@@ -343,8 +368,6 @@ class App(ctk.CTk):
             details_text = " | ".join(meta_parts)
             ctk.CTkLabel(info_frame, text=details_text, text_color="#888888", font=self.font_small, anchor="w").pack(fill="x")
 
-            # Ext
-            # Ext label removed (merged into details)
 
             ctk.CTkButton(
                 row, text="✕", width=30, height=20, fg_color="transparent", hover_color="#8B0000", text_color="red", 
@@ -405,35 +428,107 @@ class App(ctk.CTk):
         ctk.CTkFrame(self.tab_format, height=2, fg_color="gray").grid(row=1, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
 
         ctk.CTkLabel(self.tab_format, text="影片畫質", font=self.font_title).grid(row=2, column=0, padx=20, pady=10, sticky="w")
-        self.combo_video_res = ctk.CTkOptionMenu(self.tab_format, values=["Best (最高畫質)", "4320p (8K)", "2160p (4K)", "1440p (2K)", "1080p", "720p", "480p"], **option_style)
-        self.combo_video_res.grid(row=2, column=1, padx=20, pady=10, sticky="ew")
+        
+        # 畫質與相容性組合
+        res_frame = ctk.CTkFrame(self.tab_format, fg_color="transparent")
+        res_frame.grid(row=2, column=1, padx=20, pady=10, sticky="ew")
+        
+        self.combo_video_res = ctk.CTkOptionMenu(res_frame, values=["Best (最高畫質)", "4320p (8K)", "2160p (4K)", "1440p (2K)", "1080p", "720p", "480p"], **option_style)
+        self.combo_video_res.pack(side="left", fill="x", expand=True)
+        
+        # 新增 H.264 開關
+        self.var_video_legacy = ctk.BooleanVar(value=False)
+        self.chk_legacy = ctk.CTkCheckBox(res_frame, text="H.264 (相容模式)", font=self.font_small, variable=self.var_video_legacy, command=self.update_dynamic_hint)
+        self.chk_legacy.pack(side="right", padx=(10, 0))
+        
+        # 加入 Tooltip 解釋
+        CTkToolTip(self.chk_legacy, "勾選後，將強制優先下載 H.264 編碼的影片(最高1080p)，\n以確保在 Windows 內建播放器能直接播放。\n若不勾選，可能會下載 AV1/VP9 (高畫質)，在舊電腦可能無法播放。")
 
         ctk.CTkLabel(self.tab_format, text="音訊品質", font=self.font_title).grid(row=3, column=0, padx=20, pady=10, sticky="w")
-        self.combo_audio_quality = ctk.CTkOptionMenu(self.tab_format, values=["Best (來源預設)", "320 kbps", "256 kbps", "192 kbps", "128 kbps (標準)", "96 kbps (較低)", "64 kbps (省空間)"], **option_style)
+        self.combo_audio_quality = ctk.CTkOptionMenu(self.tab_format, values=["Best (來源預設)", "320 kbps", "256 kbps", "192 kbps", "128 kbps (標準)(yt最佳)", "96 kbps (較低)", "64 kbps (省空間)"], command=lambda _: self.update_dynamic_hint(), **option_style)
         self.combo_audio_quality.grid(row=3, column=1, padx=20, pady=10, sticky="ew")
 
         ctk.CTkLabel(self.tab_format, text="音訊編碼", font=self.font_title).grid(row=4, column=0, padx=20, pady=10, sticky="w")
-        self.combo_audio_codec = ctk.CTkOptionMenu(self.tab_format, values=["Auto (預設/Opus)", "AAC (車用/相容性高)"], **option_style)
+        self.combo_audio_codec = ctk.CTkOptionMenu(self.tab_format, values=["Auto (預設/Opus)", "AAC (車用/相容性高)"], command=lambda _: self.update_dynamic_hint(), **option_style)
         self.combo_audio_codec.grid(row=4, column=1, padx=20, pady=10, sticky="ew")
 
         self.lbl_format_hint = ctk.CTkLabel(self.tab_format, text="提示：若車用音響無聲音，請在「音訊編碼」選擇 AAC", font=self.font_small, text_color="#1F6AA5")
         self.lbl_format_hint.grid(row=5, column=0, columnspan=2, padx=20, pady=20)
 
     def on_format_change(self, choice):
-        if "純音訊" in choice or "無損" in choice:
+        # 1. 無損音訊 (flac/wav) -> 鎖定畫質與編碼 (不建議轉碼)
+        if "無損" in choice:
             self.combo_video_res.set("N/A")
             self.combo_video_res.configure(state="disabled")
-            self.combo_audio_codec.set("Auto (預設/Opus)")
-            self.combo_audio_codec.configure(state="disabled")
-            self.lbl_format_hint.configure(text="提示：已選擇純音訊/無損模式，畫質與編碼選項已自動調整")
+            
+            # 鎖定 H.264 (影片專用)
+            self.chk_legacy.deselect()
+            self.chk_legacy.configure(state="disabled")
+
+            self.combo_audio_codec.set("Auto (來源預設)")
+
+        
+        # 2. 一般純音訊 (mp3/m4a) -> 鎖定畫質，但開放編碼 (允許強制轉 AAC)
+        elif "純音訊" in choice:
+            self.combo_video_res.set("N/A")
+            self.combo_video_res.configure(state="disabled")
+            
+            # 鎖定 H.264 (影片專用)
+            self.chk_legacy.deselect()
+            self.chk_legacy.configure(state="disabled")
+            
+
+
+        # 3. 影片模式 -> 全部開放
         else:
             self.combo_video_res.configure(state="normal")
             self.combo_video_res.set("Best (最高畫質)")
-            self.combo_audio_codec.configure(state="normal")
-            self.lbl_format_hint.configure(text=f"提示：將下載 {choice.split(' ')[0]} 格式")
+            
+            # 開放 H.264
+            self.chk_legacy.configure(state="normal")
+
+            
+            self.update_dynamic_hint()
+
+    def update_dynamic_hint(self):
+        choice = self.combo_format.get()
+        
+        if self.var_video_legacy.get():
+             current = self.combo_audio_codec.get()
+             if not current.startswith("AAC"):
+                 self.combo_audio_codec.set("AAC (車用/相容性高)")
+             self.combo_audio_codec.configure(state="disabled")
+        else:
+             if "無損" in choice:
+                 self.combo_audio_codec.configure(state="disabled")
+             else:
+                 self.combo_audio_codec.configure(state="normal")
+
+        hint = f"提示：將下載 {choice.split(' ')[0]} 格式"
+
+        if "純音訊" in choice:
+             hint = f"提示：已選擇 {choice.split(' ')[0]} 格式，若需車用相容性可手動指定 AAC"
+        elif "無損" in choice:
+             hint = "提示：無損模式下不建議進行額外編碼轉換"
+        else:
+            if self.var_video_legacy.get():
+                hint = "提示：相容模式已開啟 (H.264 + AAC)，確保所有裝置皆可播放"
+            elif self.combo_audio_codec.get().startswith("AAC"):
+                hint = "提示：將優先使用 AAC 音訊編碼 (提升車用與舊裝置相容性)"
+            else:
+                hint = f"提示：將下載 {choice.split(' ')[0]} 格式 (自動最佳品質)"
+        
+        
+        # Checking Bitrate Selection for Warning
+        qual = self.combo_audio_quality.get()
+        if "Best" not in qual and "無損" not in choice:
+             hint += "\n(注意：在無更高品質時，強制設定位元率只會增加檔案大小無法提升原始音質)"
+
+        self.lbl_format_hint.configure(text=hint)
 
     def setup_subtitle_ui(self):
-        ctk.CTkLabel(self.tab_sub, text="請先在［基本選項］點擊「分析網址」以載入字幕列表", font=self.font_small, text_color="gray").pack(pady=10)
+        self.lbl_sub_hint = ctk.CTkLabel(self.tab_sub, text="請先在［基本選項］點擊「分析網址」以載入字幕列表", font=self.font_small, text_color="gray")
+        self.lbl_sub_hint.pack(pady=10)
         self.scroll_subs = ctk.CTkScrollableFrame(self.tab_sub, label_text=None)
         self.scroll_subs.pack(fill="both", expand=True, padx=20, pady=10)
         self.sub_checkboxes = {}
@@ -505,7 +600,7 @@ class App(ctk.CTk):
         lbl_link = ctk.CTkLabel(file_title_frame, text="[下載 Chrome/Edge 擴充]", text_color="#3B8ED0", cursor="hand2", font=self.font_small)
         lbl_link.pack(side="left", padx=5)
         lbl_link.bind("<Button-1>", open_ext_link)
-        lbl_link.bind("<Enter>", lambda e: lbl_link.configure(text_color="#1F6AA5")) # Hover effect
+        lbl_link.bind("<Enter>", lambda e: lbl_link.configure(text_color="#1F6AA5")) 
         lbl_link.bind("<Leave>", lambda e: lbl_link.configure(text_color="#3B8ED0"))
         
         def open_firefox_link(event=None):
@@ -541,24 +636,23 @@ class App(ctk.CTk):
         option_style = {
             "fg_color": "#3E3E3E", "button_color": "#505050", "button_hover_color": "#606060",
             "dropdown_fg_color": "#2B2B2B", "dropdown_hover_color": "#1F6AA5", "dropdown_text_color": "#FFFFFF",
-            "font": self.font_btn, "dropdown_font": self.font_btn, "text_color": "#FFFFFF", # 將下拉選單字體加大 (使用 font_btn: 14pt bold)
+            "font": self.font_btn, "dropdown_font": self.font_btn, "text_color": "#FFFFFF", 
         }
 
         # 改用下拉選單 (Combobox)
-        concurrent_options = [str(i) for i in range(1, 11)] # 1 到 10
+        concurrent_options = [str(i) for i in range(1, 11)]
         self.combo_concurrent = ctk.CTkOptionMenu(
             self.tab_adv, 
             values=concurrent_options, 
             command=self.on_concurrent_change,
-            width=200, # 加寬選單
+            width=200, 
             **option_style
         )
-        self.combo_concurrent.set("1") # 預設值
+        self.combo_concurrent.set("1") 
         self.combo_concurrent.pack(anchor="w", padx=20, pady=5)
 
     def on_concurrent_change(self, value):
         self.max_concurrent_downloads = int(value)
-        # 如果調大數值，嘗試檢查隊列
         self.check_queue()
 
     # --- 任務整合介面 (Setup Tasks UI) ---
@@ -788,8 +882,49 @@ class App(ctk.CTk):
             if len(trunc_url) > 60: trunc_url = trunc_url[:57] + ".."
             ctk.CTkLabel(info_frame, text=trunc_url, text_color="gray", font=("Consolas", 10), anchor="w").pack(anchor="w", fill="x")
 
-        trunc_msg = (msg[:60] + '..') if len(msg) > 60 else msg
-        ctk.CTkLabel(info_frame, text=trunc_msg, text_color="gray", font=self.font_small, anchor="w").pack(anchor="w", fill="x")
+        # Meta Info Generation (Detailed Format)
+        meta_parts = []
+        ext = config['ext']
+        if config.get('is_audio_only'):
+             # Audio: mp3 (320kbps)
+             qual = config.get('audio_qual', 'Best').split(' ')[0]
+             codec = config.get('audio_codec', 'Auto').split(' ')[0]
+             meta = f"{ext} ({qual})"
+             if codec and codec != "Auto": meta += f" [{codec}]"
+             meta_parts.append(meta)
+        else:
+            # Video: mp4 (1080p) [H.264] + Audio (192kbps) [AAC]
+            res = config.get('video_res', 'Best').split(' ')[0]
+            
+            # Video part
+            v_meta = f"{ext} ({res})"
+            if config.get('use_h264_legacy'): v_meta += " [H.264]"
+            
+            # Audio part (for video downloads)
+            a_qual = config.get('audio_qual', 'Best').split(' ')[0]
+            a_codec = config.get('audio_codec', 'Auto').split(' ')[0]
+            
+            a_meta = ""
+            # Only show audio details if user selected specific settings (not default Best/Auto)
+            is_default_audio = (a_qual == "Best" and a_codec == "Auto")
+            
+            if not is_default_audio:
+                a_meta = f" + ({a_qual})"
+                if a_codec != "Auto": a_meta += f" [{a_codec}]"
+            
+            meta_parts.append(v_meta + a_meta)
+        
+        if config.get('sub_langs'): meta_parts.append("字幕")
+        if config.get('use_time_range'): meta_parts.append("時間裁剪")
+
+        final_msg = msg
+        if success:
+             final_msg = " | ".join(meta_parts)
+             
+        trunc_msg = (final_msg[:80] + '..') if len(final_msg) > 80 else final_msg
+        
+        msg_color = "#888888" if success else "#DB3E39"
+        ctk.CTkLabel(info_frame, text=trunc_msg, text_color=msg_color, font=self.font_small, anchor="w").pack(anchor="w", fill="x")
 
         action_frame = ctk.CTkFrame(row, fg_color="transparent")
         action_frame.pack(side="right", padx=5)
@@ -886,9 +1021,9 @@ class App(ctk.CTk):
                 elif "Sign in" in err_msg: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
             else:
                 if info['subtitles']:
-                    self.show_toast("分析成功！")
+                    self.show_toast("分析完成！")
                 else:
-                    self.show_toast("分析成功，無可用字幕")
+                    self.show_toast("分析完成 (無字幕)")
                 
                 self.log(f"已獲取資訊: {info['title']}")
                 self.after(50, lambda: self.update_subtitles_ui(info['subtitles']))
@@ -896,30 +1031,39 @@ class App(ctk.CTk):
         self.after(0, _update_ui)
 
     def update_subtitles_ui(self, sub_list):
-        current_set = sorted(sub_list) if sub_list else []
-        if self.last_loaded_subtitles == current_set:
-            return
-        self.last_loaded_subtitles = current_set
+        # Force update, logic revised.
+        self.last_loaded_subtitles = sorted(sub_list) if sub_list else []
 
-
+        # Clear previous checkbox widgets in scrollable frame
+        for widget in self.scroll_subs.winfo_children(): widget.destroy()
         self.sub_checkboxes.clear()
         
+        # Scenario 1: No subtitles found
         if not sub_list: 
-             for widget in self.scroll_subs.winfo_children(): widget.destroy()
-             ctk.CTkLabel(self.scroll_subs, text="無可用字幕", font=self.font_text).pack()
+             # Use the main hint label instead of putting it inside the scroll frame
+             if hasattr(self, 'lbl_sub_hint') and self.lbl_sub_hint.winfo_exists():
+                 self.lbl_sub_hint.configure(text="此影片未提供字幕 (或無法獲取)", text_color="#FF5555")
+                 # Ensure it is visible
+                 if not self.lbl_sub_hint.winfo_ismapped():
+                     self.lbl_sub_hint.pack(pady=10, before=self.scroll_subs)
              return
 
+        # Scenario 2: Has subtitles -> Hide the hint label so we can show the list
+        if hasattr(self, 'lbl_sub_hint') and self.lbl_sub_hint.winfo_exists():
+            self.lbl_sub_hint.pack_forget()
+
+        # Populate the list
         PRIORITY_LANGS = ['zh-TW', 'zh-Hant', 'zh-HK', 'zh-Hans', 'zh-CN', 'en', 'en-US', 'en-GB', 'ja', 'ko']
         priority_matches = []
         other_matches = []
         for code in sub_list:
             if code in PRIORITY_LANGS: priority_matches.append(code)
             else: other_matches.append(code)
+        
         priority_matches.sort(key=lambda x: PRIORITY_LANGS.index(x))
         other_matches.sort()
 
-        bulk_frame = ctk.CTkFrame(self.scroll_subs, fg_color="transparent")
-
+        # Helper to create checkbox
         def create_chk(parent, code):
             lang_name = CODE_TO_NAME.get(code)
             display_text = f"★ [{code}] {lang_name}" if lang_name and code in PRIORITY_LANGS else (f"[{code}] {lang_name}" if lang_name else f"[{code}] (未知語言)")
@@ -929,25 +1073,27 @@ class App(ctk.CTk):
             self.sub_checkboxes[code] = var
             return ctk.CTkCheckBox(parent, text=display_text, variable=var, font=self.font_text, width=20) 
 
-
+        # Add Priority Subs
         if priority_matches:
-            ctk.CTkLabel(bulk_frame, text="推薦", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
+            ctk.CTkLabel(self.scroll_subs, text="推薦", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
             for code in priority_matches:
-                create_chk(bulk_frame, code).pack(anchor="w", padx=10, pady=2)
+                create_chk(self.scroll_subs, code).pack(anchor="w", padx=10, pady=2)
 
+        # Divider
         if priority_matches and other_matches: 
-            ctk.CTkFrame(bulk_frame, height=2, fg_color="#555555").pack(fill="x", padx=10, pady=10)
+            ctk.CTkFrame(self.scroll_subs, height=2, fg_color="#555555").pack(fill="x", padx=10, pady=10)
 
+        # Add Other Subs (Grid Layout)
         if other_matches:
             if priority_matches: 
-                ctk.CTkLabel(bulk_frame, text="其他", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
+                ctk.CTkLabel(self.scroll_subs, text="其他", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
             
             cols = 4
             current_row_frame = None
             
             for i, code in enumerate(other_matches):
                 if i % cols == 0:
-                    current_row_frame = ctk.CTkFrame(bulk_frame, fg_color="transparent")
+                    current_row_frame = ctk.CTkFrame(self.scroll_subs, fg_color="transparent")
                     current_row_frame.pack(fill="x", padx=5, pady=2)
                 
                 cell_frame = ctk.CTkFrame(current_row_frame, width=170, height=30, fg_color="transparent")
@@ -997,6 +1143,7 @@ class App(ctk.CTk):
             'use_time_range': self.var_cut.get(),
             'start_time': self.entry_start.get().strip(),
             'end_time': self.entry_end.get().strip(),
+            'use_h264_legacy': self.var_video_legacy.get(),
             'sub_langs': self.get_selected_subs(),
             'cookie_type': self.var_cookie.get(),
             'cookie_path': self.entry_cookie_path.get().strip(),

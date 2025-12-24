@@ -160,22 +160,59 @@ class YtDlpCore:
 
         else:
             # --- 影片模式 ---
-            video_fmt = "bestvideo"
+            # Determine Resolution Constraint
+            res_constraint = ""
             if "Best" not in config['video_res']:
                 try:
-                    res = config['video_res'].split('p')[0]
-                    video_fmt = f"bestvideo[height<={res}]"
+                     r = config['video_res'].split('p')[0]
+                     res_constraint = f"[height<={r}]"
                 except: pass
 
-            opts['format'] = f"{video_fmt}+bestaudio/best"
+            # Generate Video Preferences
+            v_codecs = []
+            if config.get('use_h264_legacy', False):
+                v_codecs.append(f"bestvideo{res_constraint}[vcodec^=avc1]")
+            v_codecs.append(f"bestvideo{res_constraint}")
+            
+            # Generate Audio Preferences
+            a_codecs = []
+            wanted_audio = config.get('audio_codec', 'Auto').split(' ')[0]
+            # If user wants AAC or Legacy Mode, prefer m4a source
+            if wanted_audio == 'AAC' or config.get('use_h264_legacy', False):
+                a_codecs.append("bestaudio[ext=m4a]")
+            a_codecs.append("bestaudio")
+
+            # Generate ALL Combinations: V1+A1 / V1+A2 / V2+A1 / V2+A2
+            # This prevents the "slash issue" where yt-dlp picks video-only format.
+            fmt_options = []
+            for v in v_codecs:
+                for a in a_codecs:
+                    fmt_options.append(f"{v}+{a}")
+            
+            # Add fallback 'best' at the end
+            fmt_options.append("best")
+            
+            opts['format'] = "/".join(fmt_options)
             opts['merge_output_format'] = config['ext']
 
-            # 判斷是否強制轉碼 AAC (車用模式)
+            # 判斷是否強制轉碼 AAC (車用模式) 確保相容性
+            # 並且應用使用者設定的 Bitrate (例如 192k, 320k)
+            # 注意: 如果來源是 128k AAC，轉成 192k 不會變好，但至少符合使用者設定的參數
             if "AAC" in config.get('audio_codec', ''):
-                opts['postprocessor_args'] = {'merger': ['-c:v', 'copy', '-c:a', 'aac']}
-                if target_bitrate: opts['postprocessor_args']['merger'].extend(['-b:a', f'{target_bitrate}k'])
+                cmd_args = ['-c:v', 'copy', '-c:a', 'aac']
+                
+                # 解析目標 Bitrate
+                # 只有當使用者明確指定數字 (如 320, 192) 時才強制指定
+                # 若為 Best (None)，則不加 -b:a，讓 ffmpeg 自動判斷或維持 VBR，不強制灌水
+                if target_bitrate and target_bitrate.isdigit():
+                     cmd_args.extend(['-b:a', f'{target_bitrate}k'])
+
+                opts['postprocessor_args'] = {'merger': cmd_args}
             else:
                 # Auto/Opus 模式
+                # 如果使用者有指定 bitrate，我們也應該嘗試應用 (若需轉檔)
+                # 簡單起見，非 AAC 模式下我們暫不強制轉檔，就讓 yt-dlp 選最佳
+                pass
                 if target_bitrate:
                      opts['postprocessor_args'] = {'merger': ['-c:v', 'copy', '-c:a', 'libopus', '-b:a', f'{target_bitrate}k']}
 
