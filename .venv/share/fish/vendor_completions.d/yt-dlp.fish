@@ -3,7 +3,7 @@ complete --command yt-dlp --long-option help --short-option h --description 'Pri
 complete --command yt-dlp --long-option version --description 'Print program version and exit'
 complete --command yt-dlp --long-option update --short-option U --description 'Check if updates are available. You installed yt-dlp from a manual build or with a package manager; Use that to update'
 complete --command yt-dlp --long-option no-update --description 'Do not check for updates (default)'
-complete --command yt-dlp --long-option update-to --description 'Upgrade/downgrade to a specific version. CHANNEL can be a repository as well. CHANNEL and TAG default to "stable" and "latest" respectively if omitted; See "UPDATE" for details. Supported channels: stable, nightly, master'
+complete --command yt-dlp --long-option update-to --description 'Upgrade/downgrade to a specific version. CHANNEL can be a repository as well. CHANNEL and TAG default to "nightly" and "latest" respectively if omitted; See "UPDATE" for details. Supported channels: stable, nightly, master'
 complete --command yt-dlp --long-option ignore-errors --short-option i --description 'Ignore download and postprocessing errors. The download will be considered successful even if the postprocessing fails'
 complete --command yt-dlp --long-option no-abort-on-error --description 'Continue with next video on download errors; e.g. to skip unavailable videos in a playlist (default)'
 complete --command yt-dlp --long-option abort-on-error --description 'Abort downloading of further videos if an error occurs (Alias: --no-ignore-errors)'

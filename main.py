@@ -1162,7 +1162,7 @@ class App(ctk.CTk):
         
         def _update_pl_ui():
             if 'error' in info:
-                self.show_toast("清單分析失敗", color="#EA0000")
+                self.show_toast("清單分析失敗", color="#FF2D2D")
                 self.log(f"清單錯誤: {info['error']}")
             else:
                 title = info.get('title', '未知清單')
@@ -1186,7 +1186,7 @@ class App(ctk.CTk):
         
         def _update_ui():
             if 'error' in info:
-                self.show_toast("分析失敗", color="#EA0000")
+                self.show_toast("分析失敗", color="#FF2D2D")
                 err_msg = info['error']
                 self.log(f"錯誤: {err_msg}")
                 

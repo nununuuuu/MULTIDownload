@@ -11,8 +11,8 @@ class YtDlpCore:
     def fetch_video_info(self, url, cookie_type='none', cookie_path=''):
         try:
             import yt_dlp
-        except ImportError:
-            return {'error': "CORE_MISSING"}
+        except ImportError as e:
+            return {'error': f"核心套件載入失敗: {e}"}
         ydl_opts = {
             'skip_download': True, 
             'quiet': True, 
@@ -42,8 +42,8 @@ class YtDlpCore:
     def fetch_playlist_info(self, url, cookie_type='none', cookie_path=''):
         try:
             import yt_dlp
-        except ImportError:
-            return {'error': "CORE_MISSING"}
+        except ImportError as e:
+            return {'error': f"核心載入失敗: {e}"}
         
         ydl_opts = {
             'skip_download': True, 

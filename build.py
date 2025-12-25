@@ -23,6 +23,46 @@ def build():
         "--windowed",
         "--clean",
         "--name", "MULTIDownload",
+        "--exclude-module", "yt_dlp", # 排除內建 yt-dlp
+        
+        # 強制包含 yt-dlp 的依賴套件 (避免 exclude yt_dlp 後連帶遺失這些)
+        "--hidden-import", "mutagen",
+        "--hidden-import", "brotli",
+        "--hidden-import", "certifi",
+        "--hidden-import", "requests",
+        "--hidden-import", "urllib3",
+        "--hidden-import", "websockets",
+        "--hidden-import", "sqlite3",
+        "--hidden-import", "optparse",
+        "--hidden-import", "email",
+        "--hidden-import", "http.client",
+        "--hidden-import", "http.cookies",
+        "--hidden-import", "http.cookiejar",
+        "--hidden-import", "xml.etree.ElementTree",
+        "--hidden-import", "pycryptodomex",
+        "--hidden-import", "Cryptodome",
+        "--hidden-import", "ctypes",
+        "--hidden-import", "curl_cffi",
+        "--hidden-import", "hmac",
+        "--hidden-import", "html",
+        "--hidden-import", "html.entities",
+        "--hidden-import", "html.parser",
+        "--hidden-import", "http.server",
+        "--hidden-import", "mimetypes",
+        "--hidden-import", "typing",
+        "--hidden-import", "fileinput",
+        "--hidden-import", "inspect",
+        "--hidden-import", "platform",
+        "--hidden-import", "shlex",
+        "--hidden-import", "textwrap",
+        "--hidden-import", "difflib",
+        "--hidden-import", "threading",
+        "--hidden-import", "subprocess",
+        "--hidden-import", "yt_dlp_ejs",
+        "--hidden-import", "yt_dlp_ejs.yt",
+        "--hidden-import", "yt_dlp_ejs.yt.solver", # Patch deeper nest
+        "--hidden-import", "secretstorage",
+        
         "--icon", r"C:\mypython\MULTIDownload\icon\1.ico",
         "--add-data", r"C:\mypython\MULTIDownload\icon\1.ico;.",
         # 排除 ffmpeg (雖然通常不會自動包進去，但明確排除也好，或只是不加入 binary)
@@ -36,27 +76,26 @@ def build():
     
     # 3. 整理輸出檔案
     dist_dir = "dist"
-    if not os.path.exists(dist_dir):
-        print("錯誤：找不到 dist 資料夾")
-        return
-
-    exe_path = os.path.join(dist_dir, "MULTIDownload.exe")
+    # 在 onedir 模式下，EXE 位於 dist/MULTIDownload/MULTIDownload.exe
+    exe_dir = os.path.join(dist_dir, "MULTIDownload") 
+    exe_path = os.path.join(exe_dir, "MULTIDownload.exe")
+    
     if not os.path.exists(exe_path):
-        print("錯誤：EXE 檔案未生成")
+        print(f"錯誤：EXE 檔案未生成 (路徑: {exe_path})")
         return
 
     # 4. 複製必要外部檔案 (languages.json)
-    # 使用者要求 .js (推測是 languages.json) 放外面
+    # 複製到 exe 所在的資料夾
     files_to_copy = ["languages.json"]
     
     for f in files_to_copy:
         if os.path.exists(f):
-            shutil.copy(f, dist_dir)
-            print(f"已複製: {f} 到 {dist_dir}")
+            shutil.copy(f, exe_dir)
+            print(f"已複製: {f} 到 {exe_dir}")
 
     # 5. 提示使用者
     print("\n" + "="*50)
-    print(f"建置成功！檔案位於: {os.path.abspath(dist_dir)}")
+    print(f"建置成功！程式位於: {os.path.abspath(exe_dir)}")
     print("請注意：")
     print("1. ffmpeg.exe 與 ffprobe.exe 需手動放入該資料夾 (或確認環境變數)")
     print("2. 首次執行程式時，請至「設定」頁面點擊「檢查並更新 yt-dlp」以安裝下載核心")
