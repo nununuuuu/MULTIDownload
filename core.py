@@ -39,6 +39,55 @@ class YtDlpCore:
         except Exception as e:
             return {'error': str(e)}
 
+    def fetch_playlist_info(self, url, cookie_type='none', cookie_path=''):
+        try:
+            import yt_dlp
+        except ImportError:
+            return {'error': "CORE_MISSING"}
+        
+        ydl_opts = {
+            'skip_download': True, 
+            'quiet': True, 
+            'no_warnings': True,
+            'extract_flat': True, # Key: Fast extraction
+            'noplaylist': False,
+        }
+
+        # Cookie Setup (Reuse logic)
+        supported_browsers = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi']
+        if cookie_type in supported_browsers:
+            ydl_opts['cookiesfrombrowser'] = (cookie_type, )
+        elif cookie_type == 'file' and cookie_path:
+            if os.path.exists(cookie_path):
+                ydl_opts['cookiefile'] = cookie_path
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                # Process entries for selection dialog
+                entries_data = []
+                if 'entries' in info:
+                    for idx, entry in enumerate(info['entries']):
+                        if entry:
+                            title = entry.get('title', '未知標題')
+                            # 嘗試獲取 URL，若無則用 ID 組建
+                            url = entry.get('url')
+                            if not url and entry.get('id'):
+                                url = f"https://www.youtube.com/watch?v={entry.get('id')}"
+                            
+                            entries_data.append({'index': idx + 1, 'title': title, 'url': url})
+                
+                count = len(entries_data)
+                if not count and info.get('playlist_count'): count = info.get('playlist_count')
+                
+                return {
+                    'title': info.get('title', '未知播放清單'),
+                    'count': count,
+                    'items': entries_data
+                }
+        except Exception as e:
+            return {'error': str(e)}
+
     def stop_download(self):
         self.stop_signal = True
 
@@ -123,11 +172,14 @@ class YtDlpCore:
         opts = {
             'outtmpl': os.path.join(config['save_path'], f"{config['filename']}.%(ext)s" if config['filename'] else "%(title)s.%(ext)s"),
             'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, log_callback, title_callback)],
-            'noplaylist': True, 'continuedl': True, 'overwrites': True,
+            'noplaylist': not config.get('playlist_mode', False), 
+            'continuedl': True, 'overwrites': True,
             'ffmpeg_location': ffmpeg_loc,
             'windowsfilenames': True, 'trim_file_name': 200,     
             'quiet': True, 'no_warnings': True,
         }
+
+
 
         # Cookie 設定
         supported_browsers = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi']

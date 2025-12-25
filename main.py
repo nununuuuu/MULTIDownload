@@ -3,15 +3,15 @@ import os
 import subprocess
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from core import YtDlpCore 
+from core import YtDlpCore
 import threading
 import uuid
 import time 
 import webbrowser
-
-
-
 import json
+
+
+
 
 # --- Load Language Map from External JSON ---
 CODE_TO_NAME = {}
@@ -112,6 +112,62 @@ class CTkToolTip:
             self.tooltip_window.destroy()
             self.tooltip_window = None
 
+# ==========================================
+# 播放清單選擇視窗 (嵌入)
+# ==========================================
+class PlaylistSelectionDialog(ctk.CTkToplevel):
+    def __init__(self, parent, title, items):
+        super().__init__(parent)
+        self.title("選取下載項目")
+        self.geometry("500x600")
+        self.result = None
+        
+        # Make modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Title
+        ctk.CTkLabel(self, text=f"清單: {title}", font=("Microsoft JhengHei UI", 14, "bold"), wraplength=450).pack(pady=10)
+        ctk.CTkLabel(self, text="請勾選要下載的項目 (預設全選)", text_color="gray").pack()
+        
+        # Scrollable List
+        self.scroll = ctk.CTkScrollableFrame(self)
+        self.scroll.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self.vars = {}
+        for item in items:
+            idx = item['index']
+            t = item['title']
+            if len(t) > 40: t = t[:38] + ".."
+            
+            var = ctk.BooleanVar(value=True)
+            self.vars[idx] = var
+            chk = ctk.CTkCheckBox(self.scroll, text=f"{idx}. {t}", variable=var, font=("Microsoft JhengHei UI", 12))
+            chk.pack(anchor="w", pady=2)
+            
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkButton(btn_frame, text="全選", width=80, command=self.select_all).pack(side="left")
+        ctk.CTkButton(btn_frame, text="全取消", width=80, command=self.deselect_all).pack(side="left", padx=10)
+        
+        ctk.CTkButton(btn_frame, text="確定", fg_color="#01814A", hover_color="#006030", command=self.on_confirm).pack(side="right")
+        
+    def select_all(self):
+        for var in self.vars.values(): var.set(True)
+        
+    def deselect_all(self):
+        for var in self.vars.values(): var.set(False)
+        
+    def on_confirm(self):
+        selected_indices = [idx for idx, var in self.vars.items() if var.get()]
+        if not selected_indices:
+            messagebox.showwarning("警告", "請至少選擇一個項目")
+            return
+        self.result = selected_indices
+        self.destroy()
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -163,6 +219,8 @@ class App(ctk.CTk):
 
         self.history_data = [] 
         self.active_task_widgets = {}
+        self.selected_playlist_data = [] 
+        self.pending_playlist_info = None 
 
         self.setup_tasks_ui() 
 
@@ -238,11 +296,18 @@ class App(ctk.CTk):
         self.entry_url = ctk.CTkEntry(self.tab_basic, width=600, font=self.font_text, placeholder_text="請在此貼上連結...")
         self.entry_url.pack(padx=20, pady=5)
         
+
+        
         # 提示文字移至輸入框下方
         ctk.CTkLabel(self.tab_basic, text="提示：直播影片推薦勾選「獨立執行」，可於背景下載避免卡住排程", font=self.font_small, text_color="#1F6AA5").pack(anchor="w", padx=25, pady=(0, 5))
         
         self.btn_analyze = ctk.CTkButton(self.tab_basic, text="分析網址 (獲取字幕)", font=self.font_btn, command=self.on_fetch_info)
         self.btn_analyze.pack(padx=20, pady=5)
+        
+        # Playlist Checkbox
+        self.var_playlist = ctk.BooleanVar(value=False)
+        self.chk_playlist = ctk.CTkCheckBox(self.tab_basic, text="下載完整播放清單 (Playlist)", font=self.font_small, variable=self.var_playlist, command=self.on_playlist_toggle)
+        self.chk_playlist.pack(padx=20, pady=5)
 
         # Path
         ctk.CTkLabel(self.tab_basic, text="下載位置", font=self.font_title).pack(anchor="w", padx=20, pady=(20, 5))
@@ -329,8 +394,6 @@ class App(ctk.CTk):
             
             # Task Details (Format, Subs, Cut)
             meta_parts = []
-            # 1. Format & Quality
-            # 1. Format & Quality
             ext = config['ext']
             if config.get('is_audio_only'):
                 # Audio: mp3 (320kbps)
@@ -352,7 +415,6 @@ class App(ctk.CTk):
                 a_codec = config.get('audio_codec', 'Auto').split(' ')[0]
                 
                 a_meta = ""
-                # Only show audio details if user selected specific settings (not default Best/Auto)
                 is_default_audio = (a_qual == "Best" and a_codec == "Auto")
                 
                 if not is_default_audio:
@@ -387,12 +449,10 @@ class App(ctk.CTk):
         self.var_select_all.set(all_checked)
 
     def start_selected_queue(self):
-        # Identify indices to start (reverse order to pop correctly)
         indices = [i for i, var in enumerate(self.queue_vars) if var.get()]
         if not indices:
             return messagebox.showwarning("提示", "請先勾選要下載的任務")
             
-        # Sort reverse
         indices.sort(reverse=True)
         
         for i in indices:
@@ -519,7 +579,6 @@ class App(ctk.CTk):
                 hint = f"提示：將下載 {choice.split(' ')[0]} 格式 (自動最佳品質)"
         
         
-        # Checking Bitrate Selection for Warning
         qual = self.combo_audio_quality.get()
         if "Best" not in qual and "無損" not in choice:
              hint += "\n(注意：在無更高品質時，強制設定位元率只會增加檔案大小無法提升原始音質)"
@@ -533,10 +592,68 @@ class App(ctk.CTk):
         self.scroll_subs.pack(fill="both", expand=True, padx=20, pady=10)
         self.sub_checkboxes = {}
 
+        manual_frame = ctk.CTkFrame(self.tab_sub, fg_color="transparent")
+        manual_frame.pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkLabel(manual_frame, text="歌單/通用字幕設定 (若無分析):", font=self.font_title).pack(anchor="w", pady=(5,5))
+        
+        self.pl_sub_vars = {
+            'zh-TW': ctk.BooleanVar(value=False),
+            'zh-Hans': ctk.BooleanVar(value=False),
+            'en': ctk.BooleanVar(value=False),
+            'ja': ctk.BooleanVar(value=False),
+            'ko': ctk.BooleanVar(value=False)
+        }
+        
+        chk_frame = ctk.CTkFrame(manual_frame, fg_color="transparent")
+        chk_frame.pack(anchor="w", padx=10)
+        
+        ctk.CTkCheckBox(chk_frame, text="繁體中文", variable=self.pl_sub_vars['zh-TW'], width=80, font=self.font_text).pack(side="left", padx=5)
+        ctk.CTkCheckBox(chk_frame, text="簡體中文", variable=self.pl_sub_vars['zh-Hans'], width=80, font=self.font_text).pack(side="left", padx=5)
+        ctk.CTkCheckBox(chk_frame, text="英文", variable=self.pl_sub_vars['en'], width=60, font=self.font_text).pack(side="left", padx=5)
+        ctk.CTkCheckBox(chk_frame, text="日文", variable=self.pl_sub_vars['ja'], width=60, font=self.font_text).pack(side="left", padx=5)
+        ctk.CTkCheckBox(chk_frame, text="韓文", variable=self.pl_sub_vars['ko'], width=60, font=self.font_text).pack(side="left", padx=5)
+        
+        CTkToolTip(chk_frame, "當下載「播放清單」或未執行分析時，將嘗試下載此處勾選的語言。\n(若該影片有此語言則下載，沒有則跳過)")
+        
+        manual_bg = ctk.CTkFrame(manual_frame, fg_color="transparent")
+        manual_bg.pack(anchor="w", padx=10, pady=(5,0))
+        
+        self.var_sub_manual = ctk.BooleanVar()
+        def toggle_manual_entry():
+            self.entry_sub_manual.configure(state="normal" if self.var_sub_manual.get() else "disabled")
+            
+        ctk.CTkCheckBox(manual_bg, text="其他 (自訂):", variable=self.var_sub_manual, command=toggle_manual_entry, width=100, font=self.font_text).pack(side="left", padx=5)
+        
+        self.entry_sub_manual = ctk.CTkEntry(manual_bg, width=120, placeholder_text="代碼 (如: th, vi)", state="disabled")
+        self.entry_sub_manual.pack(side="left", padx=5)
+        
+        ctk.CTkButton(manual_bg, text="查詢代碼表", width=80, height=24, fg_color="#555555", command=self.open_lang_table).pack(side="left", padx=10)
+
+    def open_lang_table(self):
+        top = ctk.CTkToplevel(self)
+        top.title("語言代碼對照表")
+        top.geometry("400x600")
+        
+        top.transient(self)
+        
+        ctk.CTkLabel(top, text="支援的語言代碼", font=("Microsoft JhengHei UI", 14, "bold")).pack(pady=10)
+        
+        scroll = ctk.CTkScrollableFrame(top)
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        sorted_langs = sorted(CODE_TO_NAME.items(), key=lambda x: x[0])
+        
+        for code, name in sorted_langs:
+            row = ctk.CTkFrame(scroll, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=code, width=60, anchor="w", font=("Consolas", 11, "bold")).pack(side="left", padx=5)
+            ctk.CTkLabel(row, text=name, anchor="w").pack(side="left", padx=5)
+
     def setup_output_ui(self):
         self.var_cut = ctk.BooleanVar(value=False)
-        chk_cut = ctk.CTkCheckBox(self.tab_output, text="啟用時間裁剪", font=self.font_title, variable=self.var_cut, command=self.toggle_time_inputs)
-        chk_cut.pack(anchor="w", padx=20, pady=20)
+        self.chk_cut = ctk.CTkCheckBox(self.tab_output, text="啟用時間裁剪", font=self.font_title, variable=self.var_cut, command=self.toggle_time_inputs)
+        self.chk_cut.pack(anchor="w", padx=20, pady=20)
         
         time_frame = ctk.CTkFrame(self.tab_output)
         time_frame.pack(fill="x", padx=20)
@@ -550,8 +667,36 @@ class App(ctk.CTk):
         
         ctk.CTkLabel(self.tab_output, text="直播錄製選項:", font=self.font_title).pack(anchor="w", padx=20, pady=(30, 10))
         self.var_live_mode = ctk.StringVar(value="now")
-        ctk.CTkRadioButton(self.tab_output, text="從現在開始", font=self.font_text, variable=self.var_live_mode, value="now").pack(anchor="w", padx=40, pady=5)
-        ctk.CTkRadioButton(self.tab_output, text="從頭開始", font=self.font_text, variable=self.var_live_mode, value="start").pack(anchor="w", padx=40, pady=5)
+        self.rb_live_now = ctk.CTkRadioButton(self.tab_output, text="從現在開始", font=self.font_text, variable=self.var_live_mode, value="now")
+        self.rb_live_now.pack(anchor="w", padx=40, pady=5)
+        self.rb_live_start = ctk.CTkRadioButton(self.tab_output, text="從頭開始", font=self.font_text, variable=self.var_live_mode, value="start")
+        self.rb_live_start.pack(anchor="w", padx=40, pady=5)
+
+    def on_playlist_toggle(self):
+        """歌單模式時禁用不相關選項"""
+        state = "disabled" if self.var_playlist.get() else "normal"
+        
+        # 1. Filename (Playlist uses auto naming)
+        self.entry_filename.configure(state=state)
+        if state == "disabled": self.entry_filename.configure(placeholder_text="播放清單模式下將自動命名")
+        else: self.entry_filename.configure(placeholder_text="例如: MyVideo (無需輸入副檔名)")
+        
+        # 2. Time Cut
+        self.chk_cut.configure(state=state)
+        if state == "disabled": 
+            self.chk_cut.deselect()
+            self.toggle_time_inputs() 
+            
+        # 3. Live Options
+        self.rb_live_now.configure(state=state)
+        self.rb_live_start.configure(state=state)
+
+        # 4. Start Download Button & Independent Checkbox
+        self.btn_start.configure(state=state, fg_color="gray" if state == "disabled" else "#01814A")
+        
+        if hasattr(self, 'chk_independent'):
+            self.chk_independent.configure(state=state)
+            if state == "disabled": self.var_independent.set(False)
 
     def setup_advanced_ui(self):
         # 瀏覽器 Cookie 標題區塊 (含 Tooltip)
@@ -778,7 +923,6 @@ class App(ctk.CTk):
         if task_id in self.active_queue_tasks:
             task_info = self.active_queue_tasks[task_id]
             if task_info['status'] == 'running':
-                # Pause
                 task_info['status'] = 'paused'
                 self.log(f"暫停任務: {task_info['config']['url']}")
                 try: 
@@ -786,7 +930,6 @@ class App(ctk.CTk):
                 except: pass
 
             elif task_info['status'] == 'paused':
-                # Resume
                 self.resume_task(task_id)
 
     def resume_task(self, task_id):
@@ -796,7 +939,6 @@ class App(ctk.CTk):
              self._start_core_download(info['config'], task_id=task_id)
 
     def cancel_task(self, task_id):
-        # Immediate UI Feedback
         if task_id in self.active_task_widgets:
              try:
                  w = self.active_task_widgets[task_id]
@@ -809,7 +951,6 @@ class App(ctk.CTk):
              try: 
                 self.active_queue_tasks[task_id]['core'].stop_download()
              except: pass
-        # Background tasks
         elif task_id in self.bg_tasks:
              self.stop_background_task(task_id)
         
@@ -824,7 +965,6 @@ class App(ctk.CTk):
 
     def update_task_widget(self, task_id, percent, msg):
         def _update():
-            # Double check existence to prevent TclError
             if task_id in self.active_task_widgets:
                 w = self.active_task_widgets[task_id]
                 try:
@@ -861,7 +1001,6 @@ class App(ctk.CTk):
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
         info_frame.pack(side="left", fill="x", expand=True, padx=5, pady=2)
         
-        # Determine Display Name & Mode
         display_name = config.get('filename')
         is_using_url_as_title = False
         
@@ -876,13 +1015,11 @@ class App(ctk.CTk):
         trunc_name = (display_name[:50] + '..') if len(display_name) > 50 else display_name
         ctk.CTkLabel(info_frame, text=trunc_name, font=("Microsoft JhengHei UI", 12, "bold"), anchor="w").pack(anchor="w", fill="x")
         
-        # URL (Show only if different from display_name AND didn't fallback to URL)
         if config['url'] != display_name and not is_using_url_as_title:
             trunc_url = config['url']
             if len(trunc_url) > 60: trunc_url = trunc_url[:57] + ".."
             ctk.CTkLabel(info_frame, text=trunc_url, text_color="gray", font=("Consolas", 10), anchor="w").pack(anchor="w", fill="x")
 
-        # Meta Info Generation (Detailed Format)
         meta_parts = []
         ext = config['ext']
         if config.get('is_audio_only'):
@@ -931,7 +1068,6 @@ class App(ctk.CTk):
 
         save_path = config.get('save_path', '')
         if success and save_path:
-             # Styled "Open Folder" button to look like icon
              ctk.CTkButton(action_frame, text="開啟", width=50, height=25, font=self.font_small, 
                            command=lambda p=save_path: self.safe_open_path(p)).pack(side="right", padx=2)
         
@@ -999,11 +1135,51 @@ class App(ctk.CTk):
     def on_fetch_info(self):
         url = self.entry_url.get().strip()
         if not url: return messagebox.showerror("錯誤", "請輸入網址")
+        
+        # Playlist Detection
+        if "list=" in url:
+            is_playlist = messagebox.askyesno("播放清單偵測", "偵測到此網址包含播放清單\n\n是否要下載『整張歌單』\n(選擇「否」將僅下載此影片)")
+            self.var_playlist.set(is_playlist)
+            
+            if is_playlist:
+                 self.show_toast("清單讀取中... ", duration=3000, color="#BEBEBE")
+                 self.log(f"正在分析播放清單: {url}")
+                 self.selected_playlist_data = []
+                 c_type = self.var_cookie.get()
+                 c_path = self.entry_cookie_path.get().strip()
+                 threading.Thread(target=self._run_playlist_check, args=(url, c_type, c_path), daemon=True).start()
+                 return
+
         c_type = self.var_cookie.get()
         c_path = self.entry_cookie_path.get().strip()
         self.show_toast("正在分析字幕...", color="#BEBEBE")
         self.log(f"正在分析: {url}")
         threading.Thread(target=self._run_fetch, args=(url, c_type, c_path), daemon=True).start()
+
+    def _run_playlist_check(self, url, c_type, c_path):
+        # 快速分析清單 (不抓詳細字幕)
+        info = self.core.fetch_playlist_info(url, cookie_type=c_type, cookie_path=c_path)
+        
+        def _update_pl_ui():
+            if 'error' in info:
+                self.show_toast("清單分析失敗", color="#EA0000")
+                self.log(f"清單錯誤: {info['error']}")
+            else:
+                title = info.get('title', '未知清單')
+                count = info.get('count', '?')
+                self.show_toast(f"清單分析完成 ({count} 部影片)")
+                self.log(f"已獲取清單: {title} (共 {count} 部)")
+                
+                
+                if 'items' in info and info['items']:
+                    self.pending_playlist_info = info
+                    self.show_toast("清單已就緒！\n設定格式後->「加入任務」", duration=4000)
+                    self.log(f"清單分析完成，等待使用者加入任務...")
+                else:
+                    self.pending_playlist_info = None
+                    messagebox.showinfo("歌單模式", f"已讀取清單：{title}\n\n注意：此清單無法解析內容，將預設下載全部。")
+        
+        self.after(0, _update_pl_ui)
 
     def _run_fetch(self, url, c_type, c_path):
         info = self.core.fetch_video_info(url, cookie_type=c_type, cookie_path=c_path)
@@ -1031,28 +1207,26 @@ class App(ctk.CTk):
         self.after(0, _update_ui)
 
     def update_subtitles_ui(self, sub_list):
-        # Force update, logic revised.
         self.last_loaded_subtitles = sorted(sub_list) if sub_list else []
 
-        # Clear previous checkbox widgets in scrollable frame
         for widget in self.scroll_subs.winfo_children(): widget.destroy()
         self.sub_checkboxes.clear()
         
         # Scenario 1: No subtitles found
         if not sub_list: 
-             # Use the main hint label instead of putting it inside the scroll frame
+             self.scroll_subs.pack_forget()
+             
              if hasattr(self, 'lbl_sub_hint') and self.lbl_sub_hint.winfo_exists():
                  self.lbl_sub_hint.configure(text="此影片未提供字幕 (或無法獲取)", text_color="#FF5555")
-                 # Ensure it is visible
-                 if not self.lbl_sub_hint.winfo_ismapped():
-                     self.lbl_sub_hint.pack(pady=10, before=self.scroll_subs)
+                 self.lbl_sub_hint.pack(pady=10)
              return
 
-        # Scenario 2: Has subtitles -> Hide the hint label so we can show the list
+        # Scenario 2: Has subtitles -> Hide the hint label, show scroll
         if hasattr(self, 'lbl_sub_hint') and self.lbl_sub_hint.winfo_exists():
             self.lbl_sub_hint.pack_forget()
+        
+        self.scroll_subs.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # Populate the list
         PRIORITY_LANGS = ['zh-TW', 'zh-Hant', 'zh-HK', 'zh-Hans', 'zh-CN', 'en', 'en-US', 'en-GB', 'ja', 'ko']
         priority_matches = []
         other_matches = []
@@ -1063,7 +1237,6 @@ class App(ctk.CTk):
         priority_matches.sort(key=lambda x: PRIORITY_LANGS.index(x))
         other_matches.sort()
 
-        # Helper to create checkbox
         def create_chk(parent, code):
             lang_name = CODE_TO_NAME.get(code)
             display_text = f"★ [{code}] {lang_name}" if lang_name and code in PRIORITY_LANGS else (f"[{code}] {lang_name}" if lang_name else f"[{code}] (未知語言)")
@@ -1073,7 +1246,6 @@ class App(ctk.CTk):
             self.sub_checkboxes[code] = var
             return ctk.CTkCheckBox(parent, text=display_text, variable=var, font=self.font_text, width=20) 
 
-        # Add Priority Subs
         if priority_matches:
             ctk.CTkLabel(self.scroll_subs, text="推薦", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
             for code in priority_matches:
@@ -1105,18 +1277,41 @@ class App(ctk.CTk):
 
 
         # 6. Finally, switch the view atomically
-        for widget in self.scroll_subs.winfo_children(): 
-            if widget != bulk_frame: 
-                # Crucial Fix: Unmap first to stop rendering/resize events
-                try: widget.pack_forget()
-                except: pass
-                # Then destroy
-                widget.destroy()
-        
-        # Now pack the new frame
+        pass 
         
     def get_selected_subs(self):
-         return [lang for lang, var in self.sub_checkboxes.items() if var.get()]
+        selected = [lang for lang, var in self.sub_checkboxes.items() if var.get()]
+        
+        if hasattr(self, 'pl_sub_vars'):
+             for code, var in self.pl_sub_vars.items():
+                 if var.get(): selected.append(code)
+
+        if hasattr(self, 'var_sub_manual') and self.var_sub_manual.get():
+            txt = self.entry_sub_manual.get().strip()
+            if txt:
+                parts = txt.replace(',', ' ').split()
+                for p in parts:
+                    clean_code = p.strip()
+                    if clean_code: selected.append(clean_code)
+        
+        seen = set()
+        unique_selected = []
+        for x in selected:
+            if x not in seen:
+                unique_selected.append(x)
+                seen.add(x)
+        selected = unique_selected
+        
+        PRIORITY_LANGS = ['zh-TW', 'zh-Hant', 'zh-Hans', 'zh-CN', 'en', 'en-US', 'en-GB', 'ja', 'ko']
+        
+        def sort_key(lang):
+            if lang in PRIORITY_LANGS:
+                return PRIORITY_LANGS.index(lang)
+            return 999 
+            
+        selected.sort(key=sort_key) 
+        
+        return selected
 
     def get_config_from_ui(self):
         url = self.entry_url.get().strip()
@@ -1135,7 +1330,7 @@ class App(ctk.CTk):
             'url': url,
             'save_path': final_save_path,
             'filename': self.entry_filename.get().strip(),
-            'ext': selected_ext,
+            'ext': self.combo_format.get().split(' ')[0],
             'is_audio_only': is_audio_only,
             'video_res': self.combo_video_res.get(),
             'audio_qual': self.combo_audio_quality.get(),
@@ -1143,7 +1338,8 @@ class App(ctk.CTk):
             'use_time_range': self.var_cut.get(),
             'start_time': self.entry_start.get().strip(),
             'end_time': self.entry_end.get().strip(),
-            'use_h264_legacy': self.var_video_legacy.get(),
+            'use_h264_legacy': self.var_video_legacy.get(), 
+            'playlist_mode': self.var_playlist.get(),       
             'sub_langs': self.get_selected_subs(),
             'cookie_type': self.var_cookie.get(),
             'cookie_path': self.entry_cookie_path.get().strip(),
@@ -1153,17 +1349,68 @@ class App(ctk.CTk):
         return config
 
     def on_add_task(self):
-        config = self.get_config_from_ui()
-        if not config: return
+        base_config = self.get_config_from_ui()
+        if not base_config: return
         
-        current_def_title = config.get('default_title', '')
-        if not config.get('filename') and (not current_def_title or current_def_title in ["尚未分析", "分析中..."]):
-             config['default_title'] = "正在獲取標題..." 
-             threading.Thread(target=self._auto_fetch_title, args=(config,), daemon=True).start()
+        if self.pending_playlist_info:
+            info = self.pending_playlist_info
+            
+            self.show_toast("正在開啟清單選單...", duration=2000)
+            self.update() 
+
+            dlg = PlaylistSelectionDialog(self, info.get('title', 'Unknown'), info.get('items', []))
+            self.wait_window(dlg)
+            
+            if dlg.result:
+                selected_items = []
+                for idx in dlg.result:
+                     for item in info['items']:
+                        if item['index'] == idx:
+                            selected_items.append(item)
+                            break
+                self.selected_playlist_data = selected_items
+                self.pending_playlist_info = None 
+            else:
+                 return
+
+        if base_config['playlist_mode'] and self.selected_playlist_data:
+            count = len(self.selected_playlist_data)
+            self.log(f"正在將清單展開為 {count} 個單曲任務...")
+            
+            for item in self.selected_playlist_data:
+                task_config = base_config.copy()
+                task_config['url'] = item.get('url', base_config['url']) 
+                task_config['default_title'] = item.get('title', '未知標題')
+                task_config['playlist_mode'] = False 
+                task_config['filename'] = "" 
+                
+                self.download_queue.append(task_config)
+            
+            self.log(f"已加入 {count} 個任務至排程")
+            
+            self.selected_playlist_data = []
+            
+            self.entry_url.delete(0, "end")
+            self.entry_filename.delete(0, "end")
+            self.var_playlist.set(False) 
+            self.on_playlist_toggle() 
+            
+            self.update_queue_ui()
+            
+            self.tab_view.set("任務列表")
+            self.task_segmented.set("等待中")
+            self.switch_task_view("等待中")
+            
+            return
+
+        current_def_title = base_config.get('default_title', '')
+        if not base_config.get('filename') and (not current_def_title or current_def_title in ["尚未分析", "分析中..."]):
+             base_config['default_title'] = "正在獲取標題..." 
+             threading.Thread(target=self._auto_fetch_title, args=(base_config,), daemon=True).start()
 
         # 加入佇列
-        self.download_queue.append(config)
-        self.log(f"已加入排程: {config['url']}")
+        self.download_queue.append(base_config)
+        self.log(f"已加入排程: {base_config['url']}")
         self.update_queue_ui()
         
         # Show Toast
@@ -1242,7 +1489,7 @@ class App(ctk.CTk):
 
             bg_core.start_download_thread(
                 config, 
-                progress_callback=lambda p, m: self.update_background_progress(task_id, p, m), # Modified
+                progress_callback=lambda p, m: self.update_background_progress(task_id, p, m), 
                 log_callback=self.log,
                 finish_callback=on_bg_finish
             )
@@ -1352,9 +1599,7 @@ class App(ctk.CTk):
     def update_background_progress(self, task_id, percent, msg):
         if task_id in self.bg_tasks:
             self.bg_tasks[task_id]['status'] = msg
-            # Create widget if not exists (handling race condition where start callback hits before widget creation returns)
             if task_id not in self.active_task_widgets:
-                 # Try to recover or just ignore until fully created
                  pass 
             self.update_task_widget(task_id, percent, msg)
 
@@ -1367,7 +1612,7 @@ class App(ctk.CTk):
                     info['status'] = 'cancelled'
                     info['core'].stop_download()
                 except: pass
-            # 清空等待隊列 (可選，這裡假設使用者想清空)
+            # 清空等待隊列 
             if self.download_queue:
                 if messagebox.askyesno("確認", "是否同時清空等待中的排程清單？"):
                     self.download_queue.clear()
@@ -1516,7 +1761,6 @@ class App(ctk.CTk):
                     raise Exception("找不到可用的更新檔案 (.whl)")
 
                 # 3. 下載並解壓縮
-                # 判斷路徑
                 if getattr(sys, 'frozen', False):
                     base_path = os.path.dirname(sys.executable)
                 else:
