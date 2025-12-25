@@ -12,7 +12,7 @@ class YtDlpCore:
         try:
             import yt_dlp
         except ImportError as e:
-            return {'error': f"核心套件載入失敗: {e}"}
+            return {'error': f"核心載入失敗: {e}"}
         ydl_opts = {
             'skip_download': True, 
             'quiet': True, 

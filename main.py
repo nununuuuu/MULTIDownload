@@ -1163,7 +1163,12 @@ class App(ctk.CTk):
         def _update_pl_ui():
             if 'error' in info:
                 self.show_toast("清單分析失敗", color="#FF2D2D")
-                self.log(f"清單錯誤: {info['error']}")
+                err_msg = info['error']
+                self.log(f"清單錯誤: {err_msg}")
+                
+                if "核心載入失敗" in err_msg or "CORE_MISSING" in err_msg:
+                    messagebox.showerror("核心遺失", "未安裝 yt-dlp 核心組件！\n無法進行分析或下載。\n\n請稍後在「設定」頁面點擊「檢查並更新」安裝。")
+                    self.tab_view.set("設定")
             else:
                 title = info.get('title', '未知清單')
                 count = info.get('count', '?')
@@ -1188,16 +1193,16 @@ class App(ctk.CTk):
             if 'error' in info:
                 self.show_toast("分析失敗", color="#FF2D2D")
                 err_msg = info['error']
-                self.log(f"錯誤: {err_msg}")
+                self.log(f"{err_msg}")
                 
-                if err_msg == "CORE_MISSING":
+                if "核心載入失敗" in err_msg or "CORE_MISSING" in err_msg:
                     messagebox.showerror("核心遺失", "未安裝 yt-dlp 核心組件！\n無法進行分析或下載。\n\n請稍後在「設定」頁面點擊「檢查並更新」安裝。")
                     self.tab_view.set("設定")
                     
                 elif "Sign in" in err_msg: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
             else:
                 if info['subtitles']:
-                    self.show_toast("分析完成！")
+                    self.show_toast("分析完成 (有字幕)")
                 else:
                     self.show_toast("分析完成 (無字幕)")
                 
