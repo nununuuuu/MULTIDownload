@@ -53,6 +53,15 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
    python main.py
    ```
 
+**專案結構說明：**
+- `main.py`: 程式入口與核心邏輯 (App 類別)。
+- `ui/`: 介面模組
+  - `layout.py`: 通用 UI 佈局 (Mixin)。
+  - `tasks.py`: 任務列表與歷史紀錄 UI (Mixin)。
+  - `tooltip.py`: 懸浮提示元件。
+- `core.py`: yt-dlp 下載引擎封裝。
+- `constants.py`: 全域常數與語言代碼表。
+
 ---
 
 ## 操作指南
