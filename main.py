@@ -47,7 +47,9 @@ except ImportError:
 
 
 # --- 設定：預設外觀模式 (請勿手動修改格式，程式會自動更新此行) ---
-DEFAULT_APPEARANCE_MODE = "Dark"
+DEFAULT_APPEARANCE_MODE = "Light"
+APP_VERSION = "2025.12.25"
+GITHUB_REPO = "nununuuuu/MULTIDownload"
 
 ctk.set_default_color_theme("blue")
 
@@ -168,6 +170,72 @@ class PlaylistSelectionDialog(ctk.CTkToplevel):
         self.result = selected_indices
         self.destroy()
 
+class CTkToolTip(ctk.CTkToplevel):
+    def __init__(self, widget, text, delay=200):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self._after_id = None
+        self._tip_window = None
+        
+        self.widget.bind("<Enter>", self._schedule, add="+")
+        self.widget.bind("<Leave>", self._unschedule, add="+")
+        self.widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, event=None):
+        self._unschedule()
+        self._after_id = self.widget.after(self.delay, self._show)
+
+    def _unschedule(self, event=None):
+        if self._after_id:
+            self.widget.after_cancel(self._after_id)
+            self._after_id = None
+        self._hide()
+
+    def _show(self):
+        if self._tip_window or not self.text:
+            return
+            
+        x, y, cx, cy = self.widget.bbox("insert")
+        
+        # 改為顯示在按鈕的「右側」垂直置中
+        # winfo_rootx: 按鈕左邊界在螢幕的位置
+        # winfo_width: 按鈕寬度
+        # winfo_rooty: 按鈕上邊界在螢幕的位置
+        # winfo_height: 按鈕高度
+        
+        button_x = self.widget.winfo_rootx()
+        button_y = self.widget.winfo_rooty()
+        button_w = self.widget.winfo_width()
+        button_h = self.widget.winfo_height()
+        
+        # X: 按鈕最右邊 + 10px 間距
+        target_x = button_x + button_w + 5
+        # Y: 按鈕垂直中心 - 預估 Label 高度的一半 (約15px)
+        target_y = button_y + (button_h // 2) - 15 
+        
+        self._tip_window = ctk.CTkToplevel(self.widget)
+        self._tip_window.wm_overrideredirect(True)
+        self._tip_window.wm_geometry(f"+{target_x}+{target_y}")
+        
+        self._tip_window.lift()
+        self._tip_window.attributes('-topmost', True)
+
+        # 自動反色設計：
+        # fg_color: (淺色模式用深黑, 深色模式用亮白)
+        # text_color: (淺色模式用白字, 深色模式用黑字)
+        label = ctk.CTkLabel(self._tip_window, text=self.text, corner_radius=6, 
+                             fg_color=("#1A1A1A", "#F8F9FA"), 
+                             text_color=("#FFFFFF", "#1A1A1A"), 
+                             padx=10, pady=5,
+                             font=("Microsoft YaHei UI", 14, "bold"))
+        label.pack()
+
+    def _hide(self, event=None):
+        if self._tip_window:
+            self._tip_window.destroy()
+            self._tip_window = None
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -190,8 +258,9 @@ class App(ctk.CTk):
         
         self.font_family = "Microsoft JhengHei UI" if sys.platform.startswith("win") else "PingFang TC"
         self.font_title = (self.font_family, 14, "bold")
+        self.font_sidebar_icon = (self.font_family, 18, "bold") # 側邊欄大圖示專用
         self.font_text = (self.font_family, 12)
-        self.font_btn = (self.font_family, 14, "bold")
+        self.font_btn = (self.font_family, 14, "bold") # 一般按鈕
         self.font_small = (self.font_family, 11)
         
         # 初始化
@@ -203,31 +272,50 @@ class App(ctk.CTk):
         self.max_concurrent_downloads = 1 
         self.bg_tasks = {}       
 
-        # --- 1. 建立分頁系統 ---
-        self.tab_view = ctk.CTkTabview(self)
-        self.tab_view.pack(padx=10, pady=(10, 0), fill="both", expand=True)
-        self.tab_view._segmented_button.configure(font=self.font_btn)
+        # --- Layout Logic: 1 row, 2 cols (Static Sidebar | Content) ---
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, minsize=60) # Sidebar column fixed width
+        self.grid_columnconfigure(1, weight=1)   # Content column
 
-        self.tab_basic = self.tab_view.add("基本選項")
-        self.tab_format = self.tab_view.add("格式/畫質")
-        self.tab_sub = self.tab_view.add("字幕")
-        self.tab_output = self.tab_view.add("時間裁剪")
-        self.tab_adv = self.tab_view.add("進階選項")
-        self.tab_tasks = self.tab_view.add("任務列表")
-        self.tab_log = self.tab_view.add("系統日誌")
-        self.tab_settings = self.tab_view.add("設定")
+        # 1. Sidebar Frame (Static)
+        self.sidebar_frame = ctk.CTkFrame(self, width=60, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(10, weight=1) # Spacer for bottom alignment
+
+        # 2. Main Content Area
+        self.main_view = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_view.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self.main_view.grid_rowconfigure(0, weight=1)      # Row 0: Content
+        self.main_view.grid_rowconfigure(1, weight=0)      # Row 1: Bottom Controls
+        self.main_view.grid_columnconfigure(0, weight=1)
+
+        # 3. Content Container
+        self.frames = {}
+        for name in ["Basic", "Format", "Sub", "Output", "Adv", "Tasks", "Log", "Settings", "About"]:
+             frame = ctk.CTkFrame(self.main_view, corner_radius=10, fg_color=None)
+             self.frames[name] = frame
+        
+        self.tab_basic = self.frames["Basic"]
+        self.tab_format = self.frames["Format"]
+        self.tab_sub = self.frames["Sub"]
+        self.tab_output = self.frames["Output"]
+        self.tab_adv = self.frames["Adv"]
+        self.tab_tasks = self.frames["Tasks"]
+        self.tab_log = self.frames["Log"]
+        self.tab_settings = self.frames["Settings"]
+        self.tab_about = self.frames["About"]
 
         self.history_data = [] 
         self.active_task_widgets = {}
         self.selected_playlist_data = [] 
         self.pending_playlist_info = None 
-
-        self.setup_tasks_ui() 
-
-
-        self.setup_basic_ui()
         
-        # Throttling
+        # 4. Initialize UI
+        self.setup_sidebar()
+
+        # 5. Setup Content UI
+        self.setup_tasks_ui() 
+        self.setup_basic_ui()
         self.task_last_update_time = {}
         self.setup_format_ui()
         self.setup_subtitle_ui()
@@ -235,21 +323,95 @@ class App(ctk.CTk):
         self.setup_advanced_ui()
         self.setup_log_ui()
         self.setup_settings_ui()
+        self.setup_about_ui()
 
-        # --- 2. 建立底部控制區 ---
+        # --- 6. 建立底部控制區 ---
         self.setup_bottom_controls()
         
-
+        # Default view
+        self.select_frame("Basic")
+    
+    def setup_sidebar(self):
+        # Navigation Buttons
+        self.nav_btns = {}
         
-        # Default tab
-        self.tab_view.set("基本選項")
+        # (Icon, TooltipText)
+        self.sidebar_items = {
+            "Basic": ("⌂", "基本選項"),      
+            "Format": ("🎞", "格式/畫質"),
+            "Sub": ("🔡", "字幕設定"),
+            "Output": ("✂", "時間裁切"),
+            "Adv": ("🛠", "進階選項"),
+            "Tasks": ("📥", "任務列表"),
+            "Log": ("⏱", "執行紀錄"),
+            "Settings": ("⚙", "設定"),
+            "About": ("ⓘ", "關於本軟體")
+        }
+        
+        items_order = ["Basic", "Format", "Sub", "Output", "Adv", "Tasks", "Log", "Settings", "About"]
+        
+        # 上方按鈕
+        top_items = ["Basic", "Format", "Sub", "Output", "Adv", "Tasks"]
+        for i, key in enumerate(top_items):
+            if key not in self.sidebar_items: continue
+            icon, tooltip_text = self.sidebar_items[key]
+            
+            btn = ctk.CTkButton(self.sidebar_frame, text=icon, anchor="center", 
+                                fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray75", "gray25"),
+                                font=self.font_sidebar_icon, height=50, width=60,corner_radius=0,
+                                command=lambda k=key: self.select_frame(k))
+            btn.grid(row=i, column=0, sticky="ew", pady=0)
+            self.nav_btns[key] = btn
+            CTkToolTip(btn, tooltip_text)
+
+        # 設定 Spacer (彈簧)，將第 10 列設為可伸縮，把後面的按鈕推到底部
+        self.sidebar_frame.grid_rowconfigure(10, weight=1)
+
+        # 下方按鈕 (Log, Settings, About)
+        bottom_items = ["Log", "Settings", "About"]
+        for i, key in enumerate(bottom_items):
+             if key not in self.sidebar_items: continue
+             icon, tooltip_text = self.sidebar_items[key]
+             
+             btn = ctk.CTkButton(self.sidebar_frame, text=icon, anchor="center", 
+                                 fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray75", "gray25"),
+                                 font=self.font_sidebar_icon, height=50, width=60,corner_radius=0,
+                                 command=lambda k=key: self.select_frame(k))
+             # 放在 row 11 和 12
+             btn.grid(row=11+i, column=0, sticky="ew", pady=0) 
+             self.nav_btns[key] = btn
+             CTkToolTip(btn, tooltip_text)
+
+
+
+
+
+    def select_frame(self, name):
+        # Hide all
+        for frame in self.frames.values():
+            frame.grid_forget()
+        
+        # Change Button Color
+        for key, btn in self.nav_btns.items():
+            btn.configure(fg_color="transparent")
+        
+        # Show selected
+        if name in self.frames:
+            self.frames[name].grid(row=0, column=0, sticky="nsew")
+        
+        if name in self.nav_btns:
+            self.nav_btns[name].configure(fg_color=("gray75", "gray25"))
+            
+    def change_appearance_mode_event(self, new_appearance_mode: str):
+        ctk.set_appearance_mode(new_appearance_mode)
 
     # ================= UI 建構區 =================
 
 
     def setup_bottom_controls(self):
-        self.bottom_frame = ctk.CTkFrame(self, fg_color="transparent", height=60)
-        self.bottom_frame.pack(side="bottom", fill="x", padx=15, pady=15)
+        # 底部控制區放在 main_view 的第二列 (row=1)
+        self.bottom_frame = ctk.CTkFrame(self.main_view, fg_color="transparent", height=60)
+        self.bottom_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=15)
         self.bottom_frame.grid_columnconfigure(1, weight=1)
 
         # 狀態文字
@@ -327,16 +489,25 @@ class App(ctk.CTk):
 
     def update_queue_ui(self):
         """更新等待中(排程)介面"""
-        # 清空目前等待區
-        for widget in self.view_waiting.winfo_children():
-            widget.destroy()
+        # 清空目前等待區 (但不刪除 lbl_waiting_empty)
+        if hasattr(self, 'view_waiting'):
+            for widget in self.view_waiting.winfo_children():
+                if hasattr(self, 'lbl_waiting_empty') and widget == self.lbl_waiting_empty:
+                     continue
+                widget.destroy()
 
         # Reset variables
         self.queue_vars = []
 
         if not self.download_queue:
-            ctk.CTkLabel(self.view_waiting, text="目前沒有等待中的任務", text_color="gray", font=self.font_text).pack(pady=20)
+            if hasattr(self, 'lbl_waiting_empty'):
+                 self.lbl_waiting_empty.pack(pady=20)
+            else:
+                 # Fallback if setup hasn't run yet or variable missing
+                 ctk.CTkLabel(self.view_waiting, text="目前沒有等待中的任務", text_color="gray", font=self.font_text).pack(pady=20)
         else:
+            if hasattr(self, 'lbl_waiting_empty'):
+                 self.lbl_waiting_empty.pack_forget()
             # Control Frame
             ctrl_frame = ctk.CTkFrame(self.view_waiting, fg_color="transparent")
             ctrl_frame.pack(fill="x", padx=5, pady=(0, 10))
@@ -488,6 +659,7 @@ class App(ctk.CTk):
         ctk.CTkFrame(self.tab_format, height=2, fg_color="gray").grid(row=1, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
 
         ctk.CTkLabel(self.tab_format, text="影片畫質", font=self.font_title).grid(row=2, column=0, padx=20, pady=10, sticky="w")
+
         
         # 畫質與相容性組合
         res_frame = ctk.CTkFrame(self.tab_format, fg_color="transparent")
@@ -802,47 +974,177 @@ class App(ctk.CTk):
 
     # --- 任務整合介面 (Setup Tasks UI) ---
     def setup_tasks_ui(self):
-        # 1. Segmented Control for tabs
-        self.task_view_mode = ctk.StringVar(value="active")
-        self.task_segmented = ctk.CTkSegmentedButton(
-            self.tab_tasks, 
-            values=["等待中", "進行中", "已完成"], 
-            variable=self.task_view_mode,
-            command=self.switch_task_view,
-            font=self.font_btn
-        )
-        self.task_segmented.pack(pady=10, padx=10, fill="x")
-        self.task_segmented.set("進行中") 
+        # 設定 Grid 佈局：左側內容(重)，右側導航(輕)
+        self.tab_tasks.grid_columnconfigure(0, weight=1)
+        self.tab_tasks.grid_columnconfigure(1, weight=0)
+        self.tab_tasks.grid_rowconfigure(0, weight=1)
 
-        # 2. Waiting View (排程等待) - Default Hidden
-        self.view_waiting = ctk.CTkScrollableFrame(self.tab_tasks, fg_color="transparent")
+        # 1. 內容區域 (左與中)
+        self.task_content_container = ctk.CTkFrame(self.tab_tasks, fg_color="transparent")
+        self.task_content_container.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
         
-        # 3. Active View (執行中) - Default Visible
-        self.view_active = ctk.CTkScrollableFrame(self.tab_tasks, fg_color="transparent")
+        # 2. 右側導航欄
+        self.task_right_bar = ctk.CTkFrame(self.tab_tasks, width=110, corner_radius=10)
+        self.task_right_bar.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
+        self.task_right_bar.grid_propagate(False) # <--- 關鍵修改：禁止被內容撐大
+        self.task_right_bar.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(self.task_right_bar, text="任務視圖", font=self.font_small, text_color="gray").pack(pady=(15, 5))
+
+        # 定義導航按鈕
+        self.task_nav_buttons = {}
+        nav_items = [("等待中 ", "⏳"), ("進行中", "▶️"), ("已完成", "✔️")]
+        
+        for i, (name, icon) in enumerate(nav_items):
+            btn = ctk.CTkButton(self.task_right_bar, text=f" {name}  {icon}", 
+                                font=self.font_text, 
+                                fg_color="transparent", 
+                                text_color=("gray10", "gray90"),
+                                hover_color=("gray75", "gray25"),
+                                anchor="e", 
+                                height=32,
+                                command=lambda n=name: self.switch_task_view(n))
+            btn.pack(fill="x", pady=2, padx=5)
+            self.task_nav_buttons[name] = btn
+
+        # 3. 建立各個視圖 (初始隱藏，掛載在 content_container 下)
+        
+        # Waiting View
+        self.view_waiting = ctk.CTkScrollableFrame(self.task_content_container, fg_color="transparent")
+        self.lbl_waiting_empty = ctk.CTkLabel(self.view_waiting, text="目前沒有等待中的任務", text_color="gray", font=self.font_text)
+        self.lbl_waiting_empty.pack(pady=20)
+        
+        # Active View
+        self.view_active = ctk.CTkScrollableFrame(self.task_content_container, fg_color="transparent")
         self.lbl_active_empty = ctk.CTkLabel(self.view_active, text="目前沒有執行中的任務", text_color="gray", font=self.font_text)
         self.lbl_active_empty.pack(pady=20)
-        self.view_active.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # 4. Finished View (已完成) - Default Hidden
-        self.view_finished = ctk.CTkScrollableFrame(self.tab_tasks, fg_color="transparent")
+        # Finished View
+        self.view_finished = ctk.CTkScrollableFrame(self.task_content_container, fg_color="transparent")
         self.lbl_finished_empty = ctk.CTkLabel(self.view_finished, text="目前沒有已完成的紀錄", text_color="gray", font=self.font_text)
         self.lbl_finished_empty.pack(pady=20)
         
+        
         self.btn_clear_history = ctk.CTkButton(self.tab_tasks, text="清除歷史紀錄", fg_color="gray", font=self.font_btn, command=self.clear_history)
 
+        # 創建右側欄的「清除紀錄」按鈕 (初始隱藏)
+        self.btn_clear_history_in_bar = ctk.CTkButton(self.task_right_bar, text="清除紀錄", fg_color="gray", font=self.font_small, command=self.clear_history)
+
+        # 為了相容舊代碼 (segmented button 變數)
+        self.task_segmented = type('obj', (object,), {'set': self.switch_task_view, 'get': lambda: self.current_task_view})
+        self.current_task_view = "進行中" 
+        
+        # 初始顯示
+        self.switch_task_view("進行中")
+
+    def setup_about_ui(self):
+        # 主容器 (用於垂直置中)
+        main_container = ctk.CTkFrame(self.tab_about, fg_color="transparent")
+        main_container.pack(expand=True, fill="both", padx=20, pady=20)
+        
+        # --- 1. 資訊小卡 (Info Card) ---
+        # 模仿現代 App 的卡片式設計，集中視覺焦點
+        info_card = ctk.CTkFrame(main_container, fg_color=("gray95", "gray20"), corner_radius=20, border_width=0)
+        info_card.place(relx=0.5, rely=0.45, anchor="center", relwidth=0.7, relheight=0.6)
+        
+        # (A) 標題區
+        title_label = ctk.CTkLabel(info_card, text="MULTIDownload", font=("Microsoft YaHei UI", 36, "bold"), text_color=("#1F6AA5", "#3B8ED0"))
+        title_label.pack(pady=(40, 5))
+        
+        version_label = ctk.CTkLabel(info_card, text=f"Version {APP_VERSION}", font=("Consolas", 12), text_color="gray")
+        version_label.pack(pady=(0, 20))
+        
+        desc_label = ctk.CTkLabel(info_card, text="簡單、強大、開源的多功能影音下載工具", font=("Microsoft JhengHei UI", 14), text_color=("gray40", "gray80"))
+        desc_label.pack(pady=(0, 30))
+        
+        # (B) 核心功能區 (更新按鈕)
+        # 統一色調，使用主題色
+        btn_frame = ctk.CTkFrame(info_card, fg_color="transparent")
+        btn_frame.pack(pady=10)
+        
+        self.btn_update_ytdlp = ctk.CTkButton(
+            btn_frame, 
+            text="↻ 更新核心組件 (yt-dlp)", 
+            font=("Microsoft JhengHei UI", 13, "bold"), 
+            fg_color="#1F6AA5", hover_color="#144870", # 統一藍色系
+            height=40, width=200, corner_radius=20,
+            command=self.check_for_updates 
+        )
+        self.btn_update_ytdlp.grid(row=0, column=0, padx=10, pady=10)
+        
+        self.btn_update_app = ctk.CTkButton(
+            btn_frame, 
+            text="☁ 檢查軟體更新", 
+            font=("Microsoft JhengHei UI", 13, "bold"), 
+            fg_color="transparent", border_width=2, border_color="#1F6AA5", # 幽靈按鈕風格
+            text_color=("#1F6AA5", "#3B8ED0"), hover_color=("gray90", "gray30"),
+            height=40, width=200, corner_radius=20,
+            command=lambda: threading.Thread(target=self.check_app_update, daemon=True).start()
+        )
+        self.btn_update_app.grid(row=1, column=0, padx=10, pady=10)
+
+        # (C) 連結區 (小型按鈕)
+        link_frame = ctk.CTkFrame(info_card, fg_color="transparent")
+        link_frame.pack(pady=(20, 10))
+        
+        def open_github(event=None): webbrowser.open(f"https://github.com/{GITHUB_REPO}")
+        def open_issues(event=None): webbrowser.open(f"https://github.com/{GITHUB_REPO}/issues")
+
+        # GitHub (Icon + Text)
+        btn_gh = ctk.CTkButton(link_frame, text="★ Star on GitHub", font=("Consolas", 12), 
+                               fg_color="transparent", text_color="gray", hover_color=("gray90", "gray25"),
+                               height=30, width=120, command=open_github)
+        btn_gh.pack(side="left", padx=5)
+
+        # Issue
+        btn_bug = ctk.CTkButton(link_frame, text="🐛 Report Issue", font=("Consolas", 12), 
+                                fg_color="transparent", text_color="gray", hover_color=("gray90", "gray25"),
+                                height=30, width=120, command=open_issues)
+        btn_bug.pack(side="left", padx=5)
+
+
+        # --- 2. 底部版權區 (Footer) ---
+        footer_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        footer_frame.pack(side="bottom", fill="x", pady=20)
+        
+        try:
+             if yt_dlp: v_text = f"Core: yt-dlp {yt_dlp.version.__version__}"
+             else: v_text = "Core: Not Found"
+        except: v_text = "Core: Unknown"
+        
+        ctk.CTkLabel(footer_frame, text=v_text, text_color="gray", font=("Consolas", 10)).pack(pady=(0, 10))
+
+        disclaimer = (
+            "免責聲明：本軟體僅供技術研究與個人學習使用，請勿用於商業用途。\n"
+            "Copyright © 2025 nununuuuu. Powered by yt-dlp & CustomTkinter."
+        )
+        ctk.CTkLabel(footer_frame, text=disclaimer, text_color="gray", font=("Microsoft JhengHei UI", 10), justify="center").pack()
+
     def switch_task_view(self, value):
+        self.current_task_view = value
+        
+        # 1. 更新按鈕樣式 (Highlight 當前選中)
+        for name, btn in self.task_nav_buttons.items():
+            if name == value:
+                btn.configure(fg_color=("gray85", "gray20"), text_color=("#1F6AA5", "#3B8ED0")) # Highlight
+            else:
+                btn.configure(fg_color="transparent", text_color=("gray10", "gray90"))
+
+        # 2. 切換內容顯示
         self.view_waiting.pack_forget()
         self.view_active.pack_forget()
         self.view_finished.pack_forget()
-        self.btn_clear_history.pack_forget()
+        self.btn_clear_history.place_forget() 
+        self.btn_clear_history_in_bar.pack_forget() # 先隱藏右側按鈕
 
         if value == "等待中":
-            self.view_waiting.pack(fill="both", expand=True, padx=10, pady=5)
+            self.view_waiting.pack(fill="both", expand=True)
         elif value == "進行中":
-            self.view_active.pack(fill="both", expand=True, padx=10, pady=5)
+            self.view_active.pack(fill="both", expand=True)
         elif value == "已完成":
-            self.view_finished.pack(fill="both", expand=True, padx=10, pady=5)
-            self.btn_clear_history.pack(pady=10)
+            self.view_finished.pack(fill="both", expand=True)
+            # 顯示右側欄底部的清除按鈕
+            self.btn_clear_history_in_bar.pack(side="bottom", pady=20, padx=5)
 
     def create_active_task_widget(self, task_id, config, initial_status="準備中..."):
         row = ctk.CTkFrame(self.view_active)
@@ -1854,31 +2156,81 @@ class App(ctk.CTk):
             
         ctk.CTkButton(settings_frame, text="套用並重啟", font=self.font_btn, height=40, command=apply_theme).pack(pady=(40, 20))
 
-        # 自動更新
-        self.btn_update = ctk.CTkButton(settings_frame, text="檢查並更新yt-dlp", font=self.font_btn, fg_color="gray", hover_color="#555555", command=self.check_for_updates)
-        self.btn_update.pack(pady=(0, 20))
 
 
-        def open_releases(event=None):
-            webbrowser.open("https://github.com/yt-dlp/yt-dlp/releases")
-            
-        lbl_release = ctk.CTkLabel(settings_frame, text="手動更新 yt-dlp", font=self.font_small, text_color="#3B8ED0", cursor="hand2")
-        lbl_release.pack(side="bottom", pady=(0, 20)) 
-        lbl_release.bind("<Button-1>", open_releases)
-        lbl_release.bind("<Enter>", lambda e: lbl_release.configure(text_color="#1F6AA5"))
-        lbl_release.bind("<Leave>", lambda e: lbl_release.configure(text_color="#3B8ED0"))
-
+    def check_app_update(self):
+        """檢查 App 是否有新版本 (GitHub Releases)"""
         try:
-            if yt_dlp:
-                 version_text = f"yt-dlp版本 - {yt_dlp.version.__version__}"
-            else:
-                 version_text = "yt-dlp版本 - 未安裝 (請點擊上方按鈕安裝)"
-        except:
-            version_text = "yt-dlp版本 - 未知"
+            import requests
+            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             
-        ctk.CTkLabel(settings_frame, text=version_text, font=self.font_small, text_color="gray").pack(side="bottom", pady=(5, 0))
+            # 使用 Session 避免頻繁建立連線
+            session = requests.Session()
+            resp = session.get(api_url, timeout=10)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                latest_tag = data.get("tag_name", "Unknown")
+                
+                # 去除可能的 'v' 前綴進行比較 (這裡先假設簡單字串比對)
+                if latest_tag != APP_VERSION:
+                    # 找到 exe 下載連結
+                    download_url = ""
+                    for asset in data.get("assets", []):
+                        if asset["name"].endswith(".exe"):
+                            download_url = asset["browser_download_url"]
+                            break
+                    
+                    if download_url:
+                        if tk.messagebox.askyesno("發現新版本", f"發現新版本 {latest_tag}！\n(目前版本: {APP_VERSION})\n\n是否立即更新並重啟？"):
+                            self.perform_self_update(download_url)
+                    else:
+                         tk.messagebox.showwarning("無法更新", f"發現新版本 {latest_tag}，但在發布文件中找不到 .exe 檔。")
+                else:
+                    tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。")
+            elif resp.status_code == 404:
+                tk.messagebox.showerror("檢查失敗", "找不到發布版本 (GitHub Repo 未發布 Release 或設為私有)。")
+            else:
+                tk.messagebox.showerror("檢查失敗", f"無法連接伺服器 (Status: {resp.status_code})。")
+            
+        except Exception as e:
+            tk.messagebox.showerror("檢查錯誤", f"檢查更新時發生錯誤:\n{str(e)}")
 
+    def perform_self_update(self, download_url):
+        try:
+            import requests
+            
+            # 1. 下載新版
+            new_exe_name = "MULTIDownload_Update.exe"
+            
+            # 顯示下載進度 (簡單版，用 Toast 提示開始)
+            self.show_toast("系統更新", "正在下載新版本，請稍候...", icon_color="blue")
+            self.update_idletasks()
+            
+            response = requests.get(download_url, stream=True)
+            with open(new_exe_name, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            self.show_toast("系統更新", "下載完成，正在重啟...", icon_color="green")
 
+            # 2. 執行無檔案更新 (Fileless)
+            current_exe = os.path.basename(sys.executable)
+            
+            cmd_command = (
+                f'timeout /t 2 /nobreak > NUL && '
+                f'del /f /q "{current_exe}" && '
+                f'move /y "{new_exe_name}" "{current_exe}" && '
+                f'start "" "{current_exe}"'
+            )
+            
+            subprocess.Popen(f'cmd /c "{cmd_command}"', shell=True)
+            
+            self.quit()
+            sys.exit()
+            
+        except Exception as e:
+            tk.messagebox.showerror("更新失敗", f"無法完成更新: {e}")
 
 if __name__ == "__main__":
     app = App()
