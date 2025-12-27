@@ -279,8 +279,9 @@ class YtDlpCore:
             opts['force_keyframes_at_cuts'] = True
 
         if config['sub_langs']:
-            opts['writesubtitles'] = True
-            opts['writeautomaticsub'] = True
+            should_write = not config.get('embed_subs', False)
+            opts['writesubtitles'] = should_write
+            opts['writeautomaticsub'] = should_write
             opts['subtitleslangs'] = config['sub_langs']
 
         if config['is_live']: opts['live_from_start'] = config['live_from_start']

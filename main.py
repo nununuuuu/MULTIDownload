@@ -9,6 +9,7 @@ import threading
 import uuid
 import time 
 import webbrowser
+
 import json
 
 # Refactored Imports
@@ -19,16 +20,21 @@ from ui.tooltip import CTkToolTip
 
 ctk.set_default_color_theme("blue")
 
-try:
-    import yt_dlp
-except ImportError:
-    yt_dlp = None 
-
-# 支援外部 Library 覆蓋 (保持原版邏輯)
+# 支援外部 Library 覆蓋與動態安裝
 if getattr(sys, 'frozen', False):
     app_path = os.path.dirname(sys.executable)
 else:
     app_path = os.path.dirname(os.path.abspath(__file__))
+
+# 將 lib 目錄加入搜尋路徑，優先讀取
+lib_path = os.path.join(app_path, "lib")
+if lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
 
 # ==========================================
 # 播放清單選擇視窗 (嵌入)
@@ -180,7 +186,31 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
         # Default view
         self.select_frame("Basic")
+
+        # Global Click Binding to dismiss focus
+        self.bind("<Button-1>", self._bg_click_handler)
         
+        # Check Core Library (Delayed to allow UI to show)
+        self.after(1000, self.check_core_library)
+        
+    def _bg_click_handler(self, event):
+        """點擊空白處取消輸入框焦點"""
+        try:
+            # 取得點擊的元件類別
+            w = event.widget
+            cls = w.winfo_class()
+            
+            # 如果點擊的是輸入框本身 (Entry/Text)，不做動作
+            if "Entry" in cls or "Text" in cls:
+                return
+                
+            # 如果點擊的是 CTkEntry 的內部部件，可能需要檢查父層
+            # 但通常點擊 Entry 內部會直接觸發 Entry
+            
+            # 讓主視窗獲得焦點 (即取消元件焦點)
+            self.focus()
+        except: pass
+
     def safe_open_path(self, path):
          if os.path.exists(path): os.startfile(path)
          else: messagebox.showerror("錯誤", f"找不到路徑:\n{path}")
@@ -202,13 +232,13 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.var_playlist.set(is_playlist)
             
             if is_playlist:
-                 self.show_toast("清單讀取中... ", duration=3000, color="#BEBEBE")
+                 self.show_toast("清單讀取中... ", duration=3000, color="#505050")
                  self.log(f"正在分析播放清單: {url}")
                  self.selected_playlist_data = []
                  threading.Thread(target=self._run_playlist_check, args=(url, c_type, c_path, ua, proxy), daemon=True).start()
                  return
 
-        self.show_toast("正在分析字幕...", color="#BEBEBE")
+        self.show_toast("正在分析字幕...", color="#505050")
         self.log(f"正在分析: {url}")
         threading.Thread(target=self._run_fetch, args=(url, c_type, c_path, ua, proxy), daemon=True).start()
 
@@ -218,7 +248,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
         def _update_pl_ui():
             if 'error' in info:
-                self.show_toast("清單分析失敗", color="#FF2D2D")
+                self.show_toast("清單分析失敗", color="#D93025")
                 err_msg = info['error']
                 self.log(f"清單錯誤: {err_msg}")
                 
@@ -246,7 +276,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
         def _update_ui():
             if 'error' in info:
-                self.show_toast("分析失敗", color="#FF2D2D")
+                self.show_toast("分析失敗", color="#D93025")
                 err_msg = info['error']
                 self.log(f"{err_msg}")
                 
@@ -262,7 +292,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     self.show_toast("分析完成 (無字幕)")
                 
                 self.log(f"已獲取資訊: {info['title']}")
-                self.after(50, lambda: self.update_subtitles_ui(info['subtitles']))
+                self.after(50, lambda: self.update_subtitle_list_ui(info))
         
         self.after(0, _update_ui)
 
@@ -357,6 +387,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             
             self.entry_url.delete(0, "end")
             self.entry_filename.delete(0, "end")
+            self.clear_subtitle_ui()
             self.var_playlist.set(False) 
             self.on_playlist_toggle() 
             
@@ -384,7 +415,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # 清空輸入與重置分析狀態
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
-        self.update_subtitles_ui([]) 
+        self.clear_subtitle_ui() 
 
     def _auto_fetch_title(self, config):
         """Background thread to fetch title for waiting tasks"""
@@ -471,6 +502,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             )
             self.entry_url.delete(0, "end")
             self.entry_filename.delete(0, "end")
+            self.clear_subtitle_ui()
             
             self.select_frame("Tasks")
             self.task_segmented.set("進行中")
@@ -485,12 +517,13 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
         # 提示切換
         self.select_frame("Tasks")
-        self.task_segmented.set("進行中")
+        if hasattr(self, 'seg_tasks'): self.seg_tasks.set("進行中")
         self.switch_task_view("進行中")
         
         # 清空輸入
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
+        self.clear_subtitle_ui()
 
     def check_queue(self):
         """檢查並啟動排程任務"""
@@ -542,8 +575,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              self.update_task_widget(task_id, last_percent if last_percent > 0 else 0, msg)
              self._update_task_buttons(task_id, "running")
 
-        if self.frames["Tasks"].winfo_ismapped() and self.task_segmented.get() != "進行中":
-             self.task_segmented.set("進行中")
+        if self.frames["Tasks"].winfo_ismapped() and getattr(self, 'seg_tasks', None) and self.seg_tasks.get() != "進行中":
+             self.seg_tasks.set("進行中")
              self.switch_task_view("進行中")
         
         self.log(f"啟動排程任務: {config['url']}")
@@ -707,9 +740,17 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              except: pass
 
         if task_id in self.active_queue_tasks:
-             self.active_queue_tasks[task_id]['status'] = 'cancelled'
+             info = self.active_queue_tasks[task_id]
+             
+             # 如果任務已暫停或核心未在運行，直接清理
+             if info.get('status') == 'paused' or not info['core'].is_downloading:
+                 info['status'] = 'cancelled'
+                 self.on_download_finished(False, "手動取消", task_id, info['config'])
+                 return
+
+             info['status'] = 'cancelled'
              try: 
-                self.active_queue_tasks[task_id]['core'].stop_download()
+                info['core'].stop_download()
              except: pass
         elif task_id in self.bg_tasks:
              self.stop_background_task(task_id)
@@ -722,82 +763,160 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.log(f"已手動停止背景任務: {task_id}")
             self.remove_active_task_widget(task_id)
 
-    def check_for_updates(self):
-        """檢查並自動更新 yt-dlp (針對 exe/lib 架構)"""
-        self.btn_update_ytdlp.configure(state="disabled", text="檢查中...")
+    def check_core_library(self):
+        if yt_dlp is None:
+            ans = tk.messagebox.askyesno("核心檢查", "未偵測到 yt-dlp  (或檔案已遺失)。\n這將導致無法解析或下載影片。\n是否立即安裝？\n(確定後請勿關閉程式並稍等幾秒)")
+            if ans:
+                threading.Thread(target=self.install_yt_dlp, daemon=True).start()
+            else:
+                 self.log("警告: 核心未安裝。功能將受限。", level="error")
+                 self.show_toast("核心缺失", "下載功能無法使用", icon_color="red")
+
+    def install_yt_dlp(self):
+        # 建立進度視窗
+        progress_win = ctk.CTkToplevel(self)
+        progress_win.title("核心安裝中")
+        progress_win.geometry("300x150")
+        progress_win.attributes("-topmost", True) # 置頂
         
-        def run_update():
+        # 讓視窗居中
+        x = self.winfo_x() + (self.winfo_width() // 2) - 150
+        y = self.winfo_y() + (self.winfo_height() // 2) - 75
+        progress_win.geometry(f"+{x}+{y}")
+        
+        # 進度標籤
+        lbl_status = ctk.CTkLabel(progress_win, text="正在初始化...", font=("Microsoft JhengHei UI", 14))
+        lbl_status.pack(pady=40, padx=20)
+        
+        # 禁止關閉視窗 (簡單防呆)
+        progress_win.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        def update_status(text):
+            self.after(0, lambda: lbl_status.configure(text=text))
+            self.after(0, lambda: self.log(text))
+
+        def close_progress():
+            self.after(0, progress_win.destroy)
+
+        try:
+            import requests 
+            import zipfile
+            import io
+            import shutil
+            
+            update_status("連線中...")
+            
+            target_dir = os.path.join(app_path, "lib")
+            
+            # 定義安裝成功後的重啟邏輯
+            def on_install_success(source_name):
+                update_status(f"安裝成功！({source_name})")
+                self.after(0, lambda: self.show_toast(f"{source_name} 安裝完成", "請重新啟動程式", icon_color="green"))
+                close_progress()
+                
+                def ask_restart():
+                    if tk.messagebox.askyesno("需重啟", f"核心 ({source_name}) 安裝完成！\n必須重新啟動程式才能生效。\n是否立即重啟？"):
+                        import subprocess
+                        subprocess.Popen([sys.executable] + sys.argv)
+                        self.quit()
+                        sys.exit()
+                self.after(0, ask_restart)
+
+            # --- 策略 1: PyPI (優先) ---
             try:
-                import json
-                import urllib.request
-                import zipfile
-                from io import BytesIO
-                
-                url = "https://pypi.org/pypi/yt-dlp/json"
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    data = json.loads(response.read().decode())
-                    latest_version = data['info']['version']
-                
-                if yt_dlp: current_version = yt_dlp.version.__version__
-                else: current_version = "0.0.0" 
-                
-                def parse_version(v_str):
-                    try: return tuple(map(int, v_str.split('.')))
-                    except: return (0, 0, 0)
-
-                if parse_version(latest_version) <= parse_version(current_version):
-                    self.after(0, lambda: messagebox.showinfo("檢查更新", f"版本已為最新版本 ({current_version})"))
-                    self.after(0, lambda: self.btn_update_ytdlp.configure(state="normal", text="檢查更新yt-dlp",hover_color="#555555"))
-                    return
-
-                should_update = [False]
-                def ask_user():
-                    should_update[0] = messagebox.askyesno("發現新版本", f"現有版本: {current_version}\n最新版本: {latest_version}\n\n是否立即下載並更新？")
-                
-                self.after(0, lambda: self.btn_update_ytdlp.configure(text=f"下載新版本 {latest_version}..."))
-
-                download_url = None
-                for file_info in data['urls']:
-                    if file_info['packagetype'] == 'bdist_wheel':
-                        download_url = file_info['url']
-                        break
-                
-                if not download_url: raise Exception("找不到可用的更新檔案 (.whl)")
-
-                if getattr(sys, 'frozen', False): base_path = os.path.dirname(sys.executable)
-                else: base_path = os.path.dirname(os.path.abspath(__file__))
+                update_status("正在檢查 PyPI 版本...")
+                resp = requests.get("https://pypi.org/pypi/yt-dlp/json", timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    version = data['info']['version']
+                    update_status(f"發現版本: {version}")
                     
-                lib_dir = os.path.join(base_path, 'lib')
-                if not os.path.exists(lib_dir): os.makedirs(lib_dir)
-
-                with urllib.request.urlopen(download_url, timeout=60) as response:
-                    whl_data = response.read()
+                    download_url = None
+                    for url_info in data['urls']:
+                        if url_info['filename'].endswith('.whl'):
+                            download_url = url_info['url']
+                            break
                     
-                with zipfile.ZipFile(BytesIO(whl_data)) as zip_ref:
-                    for member in zip_ref.namelist():
-                        if member.startswith('yt_dlp/'):
-                            zip_ref.extract(member, lib_dir)
-                
-                def on_success():
-                    messagebox.showinfo("更新成功", f"yt-dlp 已更新至 {latest_version}！\n\n點擊確定將自動重啟應用程式以生效。")
-                    import subprocess
-                    current_file = sys.executable if getattr(sys, 'frozen', False) else __file__
-                    subprocess.Popen([sys.executable, current_file] if not getattr(sys, 'frozen', False) else [current_file])
-                    os._exit(0)
+                    if download_url:
+                        update_status("下載 PyPI 核心中...")
+                        whl_resp = requests.get(download_url, timeout=30)
+                        
+                        if not os.path.exists(target_dir): os.makedirs(target_dir)
+                        
+                        update_status("解壓縮中...")
+                        with zipfile.ZipFile(io.BytesIO(whl_resp.content)) as z:
+                            z.extractall(target_dir)
+                            
+                        on_install_success("PyPI")
+                        return # 成功則結束
+                        
+            except Exception as pypi_e:
+                update_status(f"PyPI 失敗，切換 GitHub...")
+                self.after(0, lambda: self.log(f"PyPI 安裝失敗 ({str(pypi_e)})，嘗試切換至 GitHub...", level="warning"))
+            
+            # --- 策略 2: GitHub Releases (備援) ---
+            try:
+                update_status("正在連接 GitHub...")
+                # 使用 GitHub API 獲取最新 Release
+                gh_resp = requests.get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest", timeout=10)
+                if gh_resp.status_code == 200:
+                    gh_data = gh_resp.json()
+                    tag_name = gh_data['tag_name']
+                    zip_url = gh_data['zipball_url'] # 下載源碼 Zip
+                    
+                    update_status(f"GitHub 版本: {tag_name}")
+                    
+                    zip_resp = requests.get(zip_url, timeout=60, stream=True)
+                    
+                    # 解壓到暫存資料夾
+                    temp_extract_dir = os.path.join(app_path, "_temp_yt_dlp")
+                    if os.path.exists(temp_extract_dir): shutil.rmtree(temp_extract_dir)
+                    os.makedirs(temp_extract_dir)
+                    
+                    update_status("解壓原始碼...")
+                    with zipfile.ZipFile(io.BytesIO(zip_resp.content)) as z:
+                        z.extractall(temp_extract_dir)
+                    
+                    # GitHub 源碼結構通常是: Root-Folder/yt_dlp/...
+                    found_pkg = False
+                    for root, dirs, files in os.walk(temp_extract_dir):
+                        if 'yt_dlp' in dirs:
+                            src_pkg = os.path.join(root, 'yt_dlp')
+                            # 確認裡面有 __init__.py 才算是套件
+                            if '__init__.py' in os.listdir(src_pkg):
+                                if not os.path.exists(target_dir): os.makedirs(target_dir)
+                                # 如果目標已存在 yt_dlp，先移除
+                                target_pkg = os.path.join(target_dir, 'yt_dlp')
+                                if os.path.exists(target_pkg): shutil.rmtree(target_pkg)
+                                
+                                # 移動
+                                shutil.move(src_pkg, target_dir)
+                                found_pkg = True
+                                break
+                    
+                    # 清理暫存
+                    shutil.rmtree(temp_extract_dir)
+                    
+                    if found_pkg:
+                        on_install_success("GitHub")
+                        return
+                    else:
+                        raise Exception("在 GitHub 原始碼中找不到 yt_dlp 套件資料夾")
+                else:
+                    raise Exception(f"GitHub API Error: {gh_resp.status_code}")
 
-                self.after(0, on_success)
+            except Exception as gh_e:
+                raise Exception(f"所有下載來源皆失敗。\nGitHub: {gh_e}")
 
-            except Exception as e:
-                err_msg = str(e)
-                self.after(0, lambda: messagebox.showerror("更新失敗", f"更新錯誤: {err_msg}"))
-                self.after(0, lambda: self.btn_update_ytdlp.configure(state="normal", text="檢查並更新yt-dlp"))
-
-        threading.Thread(target=run_update, daemon=True).start()
-
+        except Exception as e:
+            close_progress()
+            err_msg = str(e)
+            self.after(0, lambda: self.log(f"核心安裝失敗: {err_msg}", level="error"))
+            self.after(0, lambda: self.show_toast("安裝失敗", err_msg, icon_color="red"))
+            self.after(0, lambda: tk.messagebox.showerror("錯誤", f"核心安裝失敗:\n{err_msg}"))
 
     def check_app_update(self):
-        """檢查 App 是否有新版本 (GitHub Releases)"""
+        """檢查 App 是否有新版本 (GitHub Releases, 優先支援 Zip 全量更新)"""
         try:
             import requests
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -811,16 +930,31 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 
                 if latest_tag != APP_VERSION:
                     download_url = ""
+                    # 優先尋找 .zip (全量更新)
                     for asset in data.get("assets", []):
-                        if asset["name"].endswith(".exe"):
+                        if asset["name"].endswith(".zip"):
                             download_url = asset["browser_download_url"]
                             break
                     
+                    # 其次尋找 .exe (快速更新)
+                    if not download_url:
+                        for asset in data.get("assets", []):
+                            if asset["name"].endswith(".exe"):
+                                download_url = asset["browser_download_url"]
+                                break
+                    
                     if download_url:
-                        if tk.messagebox.askyesno("發現新版本", f"發現新版本 {latest_tag}！\n(目前版本: {APP_VERSION})\n\n是否立即更新並重啟？"):
+                        msg = f"發現新版本 {latest_tag}！\n(目前版本: {APP_VERSION})\n\n"
+                        if download_url.endswith(".zip"):
+                            msg += "此更新為「完整資源更新」，將自動下載並覆蓋應用程式資料夾。\n"
+                        else:
+                            msg += "此更新為「快速更新」，僅替換主程式執行檔。\n"
+                        msg += "\n是否立即更新並重啟？"
+                        
+                        if tk.messagebox.askyesno("發現新版本", msg):
                             self.perform_self_update(download_url)
                     else:
-                         tk.messagebox.showwarning("無法更新", f"發現新版本 {latest_tag}，但在發布文件中找不到 .exe 檔。")
+                         tk.messagebox.showwarning("無法更新", f"發現新版本 {latest_tag}，但在發布文件中找不到 .zip 或 .exe 檔。")
                 else:
                     tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。")
             elif resp.status_code == 404:
@@ -833,30 +967,66 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
     def perform_self_update(self, download_url):
         try:
-            import requests
+
             
-            new_exe_name = "MULTIDownload_Update.exe"
-            self.show_toast("系統更新", "正在下載新版本，請稍候...", icon_color="blue")
+            self.show_toast("系統更新", "正在下載新版本...", icon_color="blue")
             self.update_idletasks()
             
+            # 判斷更新類型
+            is_zip = download_url.endswith(".zip")
+            filename = "update.zip" if is_zip else "MULTIDownload_Update.exe"
+            
+            # 下載檔案
             response = requests.get(download_url, stream=True)
-            with open(new_exe_name, "wb") as f:
+            with open(filename, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            self.show_toast("系統更新", "下載完成，正在重啟...", icon_color="green")
-
+            self.show_toast("更新準備中", "正在安裝更新，程式將自動重啟...", icon_color="blue")
+            
             current_exe = os.path.basename(sys.executable)
             
-            cmd_command = (
-                f'timeout /t 2 /nobreak > NUL && '
-                f'del /f /q "{current_exe}" && '
-                f'move /y "{new_exe_name}" "{current_exe}" && '
-                f'start "" "{current_exe}"'
-            )
+            if is_zip:
+                # 1. 解壓至暫存區
+                extract_dir = "_update_temp"
+                if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
+                os.makedirs(extract_dir)
+                
+                with zipfile.ZipFile(filename, 'r') as z:
+                    z.extractall(extract_dir)
+                
+                # 2. 尋找解壓後的根目錄 (處理 Zip 包多一層資料夾的情況)
+                src_path = extract_dir
+                items = os.listdir(extract_dir)
+                # 如果只有一個資料夾，且該資料夾內含檔案，則視為根目錄
+                if len(items) == 1 and os.path.isdir(os.path.join(extract_dir, items[0])):
+                     src_path = os.path.join(extract_dir, items[0])
+                
+                # 3. 建構 CMD 指令 (覆蓋整個資料夾)
+                # timeout 2: 等待主程式關閉
+                # xcopy: 複製並覆蓋
+                # rmdir / del: 清理暫存
+                
+                cmd_command = (
+                    f'timeout /t 2 /nobreak > NUL && '
+                    f'xcopy "{src_path}\\*" "." /s /e /y /i && '
+                    f'rmdir /s /q "{extract_dir}" && '
+                    f'del /f /q "{filename}" && '
+                    f'start "" "{current_exe}"'
+                )
+            else:
+                # EXE 替換模式
+                cmd_command = (
+                    f'timeout /t 2 /nobreak > NUL && '
+                    f'del /f /q "{current_exe}" && '
+                    f'move /y "{filename}" "{current_exe}" && '
+                    f'start "" "{current_exe}"'
+                )
             
+            # 在背景啟動 CMD
             subprocess.Popen(f'cmd /c "{cmd_command}"', shell=True)
             
+            # 關閉主程式
             self.quit()
             sys.exit()
             

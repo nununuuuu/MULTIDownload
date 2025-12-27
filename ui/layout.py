@@ -20,74 +20,7 @@ from constants import APP_VERSION, GITHUB_REPO, DEFAULT_APPEARANCE_MODE, CODE_TO
 from ui.tooltip import CTkToolTip
 
 class AppLayoutMixin:
-    def update_subtitles_ui(self, sub_list):
-        self.last_loaded_subtitles = sorted(sub_list) if sub_list else []
 
-        for widget in self.scroll_subs.winfo_children(): widget.destroy()
-        self.sub_checkboxes.clear()
-        
-        # Scenario 1: No subtitles found
-        if not sub_list: 
-             self.scroll_subs.pack_forget()
-             
-             if hasattr(self, 'lbl_sub_hint') and self.lbl_sub_hint.winfo_exists():
-                 self.lbl_sub_hint.configure(text="此影片未提供字幕 (或無法獲取)", text_color="#FF5555")
-                 self.lbl_sub_hint.pack(pady=10)
-             return
-
-        # Scenario 2: Has subtitles -> Hide the hint label, show scroll
-        if hasattr(self, 'lbl_sub_hint') and self.lbl_sub_hint.winfo_exists():
-            self.lbl_sub_hint.pack_forget()
-        
-        self.scroll_subs.pack(fill="both", expand=True, padx=20, pady=10)
-
-        PRIORITY_LANGS = ['zh-TW', 'zh-Hant', 'zh-HK', 'zh-Hans', 'zh-CN', 'en', 'en-US', 'en-GB', 'ja', 'ko']
-        priority_matches = []
-        other_matches = []
-        for code in sub_list:
-            if code in PRIORITY_LANGS: priority_matches.append(code)
-            else: other_matches.append(code)
-        
-        priority_matches.sort(key=lambda x: PRIORITY_LANGS.index(x))
-        other_matches.sort()
-
-        def create_chk(parent, code):
-            lang_name = CODE_TO_NAME.get(code)
-            display_text = f"★ [{code}] {lang_name}" if lang_name and code in PRIORITY_LANGS else (f"[{code}] {lang_name}" if lang_name else f"[{code}] (未知語言)")
-            if len(display_text) > 20: display_text = display_text[:18] + ".."
-            
-            var = ctk.BooleanVar()
-            self.sub_checkboxes[code] = var
-            return ctk.CTkCheckBox(parent, text=display_text, variable=var, font=self.font_text, width=20) 
-
-        if priority_matches:
-            ctk.CTkLabel(self.scroll_subs, text="推薦", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
-            for code in priority_matches:
-                create_chk(self.scroll_subs, code).pack(anchor="w", padx=10, pady=2)
-
-        # Divider
-        if priority_matches and other_matches: 
-            ctk.CTkFrame(self.scroll_subs, height=2, fg_color="#555555").pack(fill="x", padx=10, pady=10)
-
-        # Add Other Subs (Grid Layout)
-        if other_matches:
-            if priority_matches: 
-                ctk.CTkLabel(self.scroll_subs, text="其他", text_color="#1F6AA5", font=self.font_small).pack(anchor="w", padx=10, pady=(5,0))
-            
-            cols = 4
-            current_row_frame = None
-            
-            for i, code in enumerate(other_matches):
-                if i % cols == 0:
-                    current_row_frame = ctk.CTkFrame(self.scroll_subs, fg_color="transparent")
-                    current_row_frame.pack(fill="x", padx=5, pady=2)
-                
-                cell_frame = ctk.CTkFrame(current_row_frame, width=170, height=30, fg_color="transparent")
-                cell_frame.pack_propagate(False) 
-                cell_frame.pack(side="left", padx=5)
-                
-                chk = create_chk(cell_frame, code)
-                chk.pack(side="left", anchor="w")
 
     def get_selected_subs(self):
         selected = [lang for lang, var in self.sub_checkboxes.items() if var.get()]
@@ -167,8 +100,12 @@ class AppLayoutMixin:
 
     def _load_icon(self, filename):
         try:
-            # Check runtime path vs dev path
-            base_path = r"c:\mypython\MULTIDownload\icon" 
+            if hasattr(sys, '_MEIPASS'):
+                base_path = os.path.join(sys._MEIPASS, "icon")
+            else:
+                # ui/layout.py -> ui -> project_root
+                base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icon")
+                
             path = os.path.join(base_path, filename)
             if os.path.exists(path):
                 img_white = Image.open(path).convert("RGBA")
@@ -364,7 +301,7 @@ class AppLayoutMixin:
         header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         
         ctk.CTkFrame(header_frame, width=4, height=18, fg_color="#1F6AA5", corner_radius=2).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header_frame, text="快速設定", font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+        ctk.CTkLabel(header_frame, text="快速設定 (Quick Settings)", font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
 
         # Path
         ctk.CTkLabel(s_content, text="儲存位置", font=("Microsoft JhengHei UI", 13), text_color=("gray40", "gray60")).grid(row=1, column=0, sticky="w", pady=5)
@@ -405,12 +342,6 @@ class AppLayoutMixin:
              self.chk_cut.configure(state=state)
              if state == "disabled":
                   self.chk_cut.deselect()
-                  # We need to manually trigger the toggle effect or call command?
-                  # Since toggle_cut is internal function in setup_output_ui, we can't call it directly.
-                  # But var_cut is shared. If we deselect, var_cut becomes False.
-                  # We can assume UI setup made entry_start/end follow var_cut if we could trigger it.
-                  # BUT toggle_cut is bound to command. Deselecting programmatically DOES NOT trigger command in CTk usually.
-                  # We should handle entry state here manually.
                   if hasattr(self, 'entry_start'): self.entry_start.configure(state="disabled")
                   if hasattr(self, 'entry_end'): self.entry_end.configure(state="disabled")
         
@@ -424,131 +355,19 @@ class AppLayoutMixin:
             self.entry_path.delete(0, "end")
             self.entry_path.insert(0, filename)
 
-    def update_queue_ui(self):
-        """更新等待中(排程)介面"""
-        # 清空目前等待區 (但不刪除 lbl_waiting_empty)
-        if hasattr(self, 'view_waiting'):
-            for widget in self.view_waiting.winfo_children():
-                if hasattr(self, 'lbl_waiting_empty') and widget == self.lbl_waiting_empty:
-                     continue
-                widget.destroy()
 
-        # Reset variables
-        self.queue_vars = []
-
-        if not self.download_queue:
-            if hasattr(self, 'lbl_waiting_empty'):
-                 self.lbl_waiting_empty.pack(pady=20)
-            else:
-                 ctk.CTkLabel(self.view_waiting, text="目前沒有等待中的任務", text_color="gray", font=self.font_text).pack(pady=20)
-        else:
-            if hasattr(self, 'lbl_waiting_empty'):
-                 self.lbl_waiting_empty.pack_forget()
-            ctrl_frame = ctk.CTkFrame(self.view_waiting, fg_color="transparent")
-            ctrl_frame.pack(fill="x", padx=5, pady=(0, 10))
-            
-            self.var_select_all = ctk.BooleanVar(value=False)
-            chk_all = ctk.CTkCheckBox(ctrl_frame, text="全選", font=self.font_small, width=60, 
-                                      variable=self.var_select_all, command=self.toggle_select_all)
-            chk_all.pack(side="left", padx=5)
-            
-            ctk.CTkButton(
-                ctrl_frame, text="下載選取項目", fg_color="#01814A", hover_color="#006030", font=self.font_btn,
-                command=self.start_selected_queue
-            ).pack(side="left", fill="x", expand=True, padx=5)
-        
-        for i, config in enumerate(self.download_queue):
-            row = ctk.CTkFrame(self.view_waiting, fg_color=("gray85", "gray25"))
-            row.pack(fill="x", pady=2, padx=5)
-            
-            # Checkbox
-            var = ctk.BooleanVar(value=False)
-            self.queue_vars.append(var)
-            ctk.CTkCheckBox(row, text="", width=24, variable=var, command=self.update_select_all_state).pack(side="left", padx=(10, 0), anchor="n", pady=5)
-            
-            # Index
-            ctk.CTkLabel(row, text=f"{i+1}.", font=self.font_text, width=30).pack(side="left", padx=0, anchor="n", pady=5)
-            
-            # Info Frame
-            info_frame = ctk.CTkFrame(row, fg_color="transparent")
-            info_frame.pack(side="left", fill="x", expand=True, padx=5, pady=2)
-            
-            # Determine Display Name & Mode
-            display_name = config.get('filename')
-            is_using_url_as_title = False
-            
-            if not display_name:
-                default_t = config.get('default_title', '')
-                if default_t and default_t not in ["尚未分析", "分析中...", ""]:
-                    display_name = default_t
-                else:
-                    display_name = config['url']
-                    is_using_url_as_title = True
-            
-            if len(display_name) > 50: display_name = display_name[:47] + "..."
-            
-            # Title
-            ctk.CTkLabel(info_frame, text=display_name, font=("Microsoft JhengHei UI", 12, "bold"), anchor="w").pack(fill="x")
-            
-            # URL (Show only if different from display_name AND didn't fallback to URL)
-            if config['url'] != display_name and not is_using_url_as_title:
-                url_text = config['url']
-                if len(url_text) > 60: url_text = url_text[:57] + "..."
-                ctk.CTkLabel(info_frame, text=url_text, text_color="gray", font=("Consolas", 10), anchor="w").pack(fill="x")
-            
-            # Task Details (Format, Subs, Cut)
-            meta_parts = []
-            ext = config['ext']
-            if config.get('is_audio_only'):
-                # Audio: mp3 (320kbps)
-                 qual = config.get('audio_qual', 'Best').split(' ')[0]
-                 codec = config.get('audio_codec', 'Auto').split(' ')[0]
-                 meta = f"{ext} ({qual})"
-                 if codec and codec != "Auto": meta += f" [{codec}]"
-                 meta_parts.append(meta)
-            else:
-                # Video: mp4 (1080p) [H.264] + Audio (192kbps) [AAC]
-                res = config.get('video_res', 'Best').split(' ')[0]
-                
-                # Video part
-                v_meta = f"{ext} ({res})"
-                if config.get('use_h264_legacy'): v_meta += " [H.264]"
-                
-                # Audio part (for video downloads)
-                a_qual = config.get('audio_qual', 'Best').split(' ')[0]
-                a_codec = config.get('audio_codec', 'Auto').split(' ')[0]
-                
-                a_meta = ""
-                is_default_audio = (a_qual == "Best" and a_codec == "Auto")
-                
-                if not is_default_audio:
-                    a_meta = f" + ({a_qual})"
-                    if a_codec != "Auto": a_meta += f" [{a_codec}]"
-                
-                meta_parts.append(v_meta + a_meta)
-            
-            # 2. Tags
-            if config.get('sub_langs'): meta_parts.append("字幕")
-            if config.get('use_time_range'): meta_parts.append("時間裁剪")
-            
-            details_text = " | ".join(meta_parts)
-            ctk.CTkLabel(info_frame, text=details_text, text_color="#888888", font=self.font_small, anchor="w").pack(fill="x")
-
-            ctk.CTkButton(
-                row, text="✕", width=30, height=20, fg_color="transparent", hover_color="#8B0000", text_color="red", 
-                command=lambda idx=i: self.remove_from_queue(idx)
-            ).pack(side="right", padx=10)
 
     def setup_format_ui(self):
-        # 使用 pack 對齊，避免 grid 造成的混亂
-        self.tab_format.pack_propagate(False) 
-        
-        main_scroll = ctk.CTkFrame(self.tab_format, fg_color="transparent")
-        main_scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        # --- Initialize Variables First to avoid AttributeError ---
+        if not hasattr(self, 'var_video_res'): self.var_video_res = ctk.StringVar(value="Best (最高畫質)")
+        if not hasattr(self, 'var_video_legacy'): self.var_video_legacy = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_audio_only'): self.var_audio_only = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_audio_qual'): self.var_audio_qual = ctk.StringVar(value="Best (來源預設)")
+        if not hasattr(self, 'var_audio_codec'): self.var_audio_codec = ctk.StringVar(value="Auto (預設/Opus)")
+        if not hasattr(self, 'var_embed_thumb'): self.var_embed_thumb = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_embed_subs'): self.var_embed_subs = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_metadata'): self.var_metadata = ctk.BooleanVar(value=False)
 
-        # Common Styles
-        title_font = ("Microsoft JhengHei UI", 16, "bold")
-        sub_font = ("Microsoft JhengHei UI", 14)
         opt_style = {
             "height": 40, "corner_radius": 8,
             "fg_color": "#3E3E3E", 
@@ -557,68 +376,90 @@ class AppLayoutMixin:
             "font": self.font_text, "dropdown_font": self.font_text, "text_color": "#FFFFFF"
         }
 
-        # --- 1. 主要格式選擇 (Primary Format) ---
-        fmt_frame = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        fmt_frame.pack(fill="x", pady=(0, 30))
+        # --- Layout Setup ---
+        # 清空舊有元件
+        for widget in self.tab_format.winfo_children():
+            widget.destroy()
+
+        self.tab_format.pack_propagate(False)
         
-        ctk.CTkLabel(fmt_frame, text="選擇輸出格式 (Output Format)", font=title_font, text_color=("gray20", "gray90")).pack(anchor="w", pady=(0, 10))
+        # 建立主捲動容器
+        scroll_container = ctk.CTkScrollableFrame(self.tab_format, fg_color="transparent")
+        scroll_container.pack(fill="both", expand=True, padx=10, pady=10)
         
+        scroll_container.grid_columnconfigure(0, weight=1, uniform="cols")
+        scroll_container.grid_columnconfigure(1, weight=1, uniform="cols")
+
+        # Helper: Create Card
+        def create_card(parent, title, icon, row, col, columnspan=1):
+            frame = ctk.CTkFrame(parent, fg_color=("gray95", "gray20"), corner_radius=15)
+            frame.grid(row=row, column=col, sticky="nsew", padx=10, pady=10, columnspan=columnspan)
+            
+            # Header
+            header = ctk.CTkFrame(frame, fg_color="transparent")
+            header.pack(fill="x", padx=20, pady=(15, 10))
+            
+            ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 20)).pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+            
+            content = ctk.CTkFrame(frame, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+            return content
+
+        # --- Card 1: Video Settings ---
+        video_content = create_card(scroll_container, "影片設定 (Video)", "🎬", row=0, col=0)
+        
+        ctk.CTkLabel(video_content, text="輸出格式 (Format)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
         self.format_options = ["mp4 (影片+音訊)", "mkv (影片+音訊)", "webm (影片+音訊)", "mp3 (純音訊)", "m4a (純音訊)", "flac (無損音訊)", "wav (無損音訊)"]
-        self.combo_format = ctk.CTkOptionMenu(fmt_frame, values=self.format_options, command=self.on_format_change, **opt_style)
+        self.combo_format = ctk.CTkOptionMenu(video_content, values=self.format_options, command=self.on_format_change, 
+                                              width=200, **opt_style)
         self.combo_format.set("mp4 (影片+音訊)")
-        self.combo_format.pack(fill="x")
+        self.combo_format.pack(fill="x", pady=(0, 15))
 
-        # --- 2. 詳細品質設定 (Quality Details) ---
-        detail_container = ctk.CTkFrame(main_scroll, fg_color=("gray90", "gray16"), corner_radius=12)
-        detail_container.pack(fill="x", pady=(0, 30))
+        ctk.CTkLabel(video_content, text="影片畫質 (Resolution)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
+        self.combo_video_res = ctk.CTkOptionMenu(video_content, values=["Best (最高畫質)", "4320p (8K)", "2160p (4K)", "1440p (2K)", "1080p", "720p", "480p"], 
+                                                 variable=self.var_video_res, width=200, **opt_style)
+        self.combo_video_res.pack(fill="x", pady=(0, 15))
         
-        # 內部 Grid 配置 (左右分欄)
-        detail_container.grid_columnconfigure(1, weight=1)
-        
-        # Row 1: Video Resolution
-        ctk.CTkLabel(detail_container, text="影片畫質", font=sub_font, text_color="gray").grid(row=0, column=0, padx=30, pady=(25, 15), sticky="w")
-        
-        v_res_box = ctk.CTkFrame(detail_container, fg_color="transparent")
-        v_res_box.grid(row=0, column=1, padx=30, pady=(25, 15), sticky="ew")
-        
-        self.combo_video_res = ctk.CTkOptionMenu(v_res_box, values=["Best (最高畫質)", "4320p (8K)", "2160p (4K)", "1440p (2K)", "1080p", "720p", "480p"], width=180, **opt_style)
-        self.combo_video_res.pack(side="left", fill="x", expand=True)
+        bg_legacy = ctk.CTkFrame(video_content, fg_color=("gray90", "gray25"), corner_radius=8)
+        bg_legacy.pack(fill="x", pady=5)
+        self.chk_legacy = ctk.CTkSwitch(bg_legacy, text="使用 H.264 (高相容)", variable=self.var_video_legacy, 
+                                        font=("Microsoft JhengHei UI", 13), progress_color="#1F6AA5", command=self.update_dynamic_hint)
+        self.chk_legacy.pack(padx=10, pady=10, anchor="w")
+        CTkToolTip(self.chk_legacy, "若您的播放裝置較舊，請開啟此選項。\n注意：最高畫質通常限制為 1080p。")
 
-        self.var_video_legacy = ctk.BooleanVar(value=False)
-        self.chk_legacy = ctk.CTkCheckBox(v_res_box, text="H.264 (相容模式)", font=self.font_small, variable=self.var_video_legacy, command=self.update_dynamic_hint)
-        self.chk_legacy.pack(side="right", padx=(10, 0))
-        CTkToolTip(self.chk_legacy, "勾選後，將強制優先下載 H.264 編碼的影片(最高1080p)。\n適合舊電腦或需要在 Windows 內建播放器直接播放的情況。")
-
-        # Row 2: Audio Quality
-        ctk.CTkLabel(detail_container, text="音訊品質", font=sub_font, text_color="gray").grid(row=1, column=0, padx=30, pady=15, sticky="w")
-        self.combo_audio_quality = ctk.CTkOptionMenu(detail_container, values=["Best (來源預設)", "320 kbps", "256 kbps", "192 kbps", "128 kbps (標準)(yt最佳)", "96 kbps (較低)", "64 kbps (省空間)"], command=lambda _: self.update_dynamic_hint(), **opt_style)
-        self.combo_audio_quality.grid(row=1, column=1, padx=30, pady=15, sticky="ew")
-
-        # Row 3: Audio Codec
-        ctk.CTkLabel(detail_container, text="音訊編碼", font=sub_font, text_color="gray").grid(row=2, column=0, padx=30, pady=(15, 25), sticky="w")
-        self.combo_audio_codec = ctk.CTkOptionMenu(detail_container, values=["Auto (預設/Opus)", "AAC (車用/相容性高)"], command=lambda _: self.update_dynamic_hint(), **opt_style)
-        self.combo_audio_codec.grid(row=2, column=1, padx=30, pady=(15, 25), sticky="ew")
-
-        # Hint Label
-        self.lbl_format_hint = ctk.CTkLabel(main_scroll, text="提示：若車用音響無聲音，請在「音訊編碼」選擇 AAC", font=("Microsoft JhengHei UI", 12), text_color="#1F6AA5")
-        self.lbl_format_hint.pack(pady=(0, 20))
-
-        # --- 3. 後期處理 (Post-Processing) ---
-        ctk.CTkLabel(main_scroll, text="後期處理選項", font=sub_font, text_color="gray").pack(anchor="w", pady=(10, 5))
+        # --- Card 2: Audio Settings ---
+        audio_content = create_card(scroll_container, "音訊設定 (Audio)", "🎵", row=0, col=1)
         
-        pp_frame = ctk.CTkFrame(main_scroll, fg_color="transparent")
-        pp_frame.pack(fill="x", pady=(0, 20))
+        ctk.CTkLabel(audio_content, text="音訊音質 (Bitrate)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
+        self.combo_audio_quality = ctk.CTkOptionMenu(audio_content, values=["Best (來源預設)", "320 kbps", "256 kbps", "192 kbps", "128 kbps (標準)(yt最佳)", "96 kbps (較低)", "64 kbps (省空間)"], 
+                                                     variable=self.var_audio_qual, command=lambda _: self.update_dynamic_hint(), width=200, **opt_style)
+        self.combo_audio_quality.pack(fill="x", pady=(0, 15))
+
+        ctk.CTkLabel(audio_content, text="音訊編碼 (Codec)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
+        self.combo_audio_codec = ctk.CTkOptionMenu(audio_content, values=["Auto (預設/Opus)", "AAC (車用/相容性高)"], 
+                                                   variable=self.var_audio_codec, command=lambda _: self.update_dynamic_hint(), width=200, **opt_style)
+        self.combo_audio_codec.pack(fill="x", pady=(0, 15))
         
-        self.var_embed_thumb = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(pp_frame, text="嵌入縮圖", variable=self.var_embed_thumb, font=self.font_text, corner_radius=20).pack(side="left", padx=(0, 20))
+        self.lbl_format_hint = ctk.CTkLabel(audio_content, text="提示：若車用音響無聲音，請在「音訊編碼」選擇 AAC", font=("Microsoft JhengHei UI", 12), text_color="#1F6AA5", wraplength=250)
+        self.lbl_format_hint.pack(pady=(10, 0))
+
+        # --- Card 3: Post Processing ---
+        post_content = create_card(scroll_container, "下載與後處理選項 (Post-Processing)", "🔧", row=1, col=0, columnspan=2)
+        post_content.grid_columnconfigure(0, weight=1)
+        post_content.grid_columnconfigure(1, weight=1)
         
-        self.var_embed_subs = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(pp_frame, text="嵌入字幕 (mkv/mp4)", variable=self.var_embed_subs, font=self.font_text, corner_radius=20).pack(side="left", padx=20)
-        
-        self.var_metadata = ctk.BooleanVar(value=False)
-        chk_meta = ctk.CTkCheckBox(pp_frame, text="寫入中繼資料", variable=self.var_metadata, font=self.font_text, corner_radius=20)
-        chk_meta.pack(side="left", padx=20)
-        CTkToolTip(chk_meta, "將影片資訊 (如標題、作者、日期、章節等) 寫入檔案中。\n部分播放器可顯示章節與詳細資訊。")
+        def create_switch(parent, text, var, r, c, tooltip=None):
+            # 使用 CTkSwitch 取代 CheckBox
+            sw = ctk.CTkSwitch(parent, text=text, variable=var, font=("Microsoft JhengHei UI", 13), 
+                               progress_color="#1F6AA5", button_hover_color="#144870")
+            sw.grid(row=r, column=c, sticky="w", padx=20, pady=12)
+            if tooltip: CTkToolTip(sw, tooltip)
+            return sw
+
+        create_switch(post_content, "內嵌影片縮圖 (Thumbnail)", self.var_embed_thumb, 0, 0, "將 YouTube 封面圖寫入影片檔案中")
+        create_switch(post_content, "內嵌字幕檔案 (Embed Subs)", self.var_embed_subs, 0, 1, "將下載的字幕檔直接封裝進影片 (Softsubs)")
+        create_switch(post_content, "寫入中繼資料 (Metadata)", self.var_metadata, 1, 0, "寫入標題、作者、日期等詳細資訊")
 
         self.on_format_change(None)
 
@@ -645,7 +486,7 @@ class AppLayoutMixin:
              hint = "提示：無損模式下不建議進行額外編碼轉換"
         else:
             if self.var_video_legacy.get():
-                hint = "提示：相容模式已開啟 (H.264 + AAC)，確保所有裝置皆可播放"
+                hint = "提示：相容模式已開啟 (H.264 + AAC)\n確保所有裝置皆可播放"
             elif self.combo_audio_codec.get().startswith("AAC"):
                 hint = "提示：將優先使用 AAC 音訊編碼 (提升車用與舊裝置相容性)"
             else:
@@ -694,16 +535,36 @@ class AppLayoutMixin:
         self.update_dynamic_hint()
     
     def setup_subtitle_ui(self):
-        # 1. Hint Label
-        self.lbl_sub_hint = ctk.CTkLabel(self.tab_sub, text="請先在［基本選項］點擊「分析網址」以載入字幕列表", font=("Microsoft JhengHei UI", 12), text_color="gray")
-        self.lbl_sub_hint.pack(pady=(15, 5))
+        # 1. Search & Filter Bar (Top)
+        filter_frame = ctk.CTkFrame(self.tab_sub, fg_color="transparent")
+        filter_frame.pack(fill="x", padx=20, pady=(15, 10))
         
-        # 2. Scrollable List for Analysis Results
-        self.scroll_subs = ctk.CTkScrollableFrame(self.tab_sub, label_text=None, fg_color=("gray95", "gray16"))
-        self.scroll_subs.pack(fill="both", expand=True, padx=20, pady=10)
-        self.sub_checkboxes = {}
+        # Search Icon/Label
+        ctk.CTkLabel(filter_frame, text="🔍", font=("Segoe UI Emoji", 16)).pack(side="left", padx=(0, 5))
+        
+        # Search Entry
+        self.var_sub_search = ctk.StringVar()
+        self.var_sub_search.trace("w", self._on_sub_search_change)
+        
+        self.entry_sub_search = ctk.CTkEntry(filter_frame, placeholder_text="搜尋語言或代碼 (如: 繁體, en, zh-TW)...", placeholder_text_color="gray", height=35, font=self.font_text)
+        self.entry_sub_search.bind("<KeyRelease>", self._on_sub_search_change)
+        self.entry_sub_search.pack(side="left", fill="x", expand=True)
+        
+        # Hint (Right side)
+        ctk.CTkLabel(filter_frame, text="(*請先分析網址)", text_color="gray", font=self.font_small).pack(side="left", padx=(10, 0))
 
-        # 3. Manual Settings (Clean Layout)
+        # 2. Scrollable List for Subtitles
+        self.scroll_subs = ctk.CTkScrollableFrame(self.tab_sub, label_text=None, fg_color=("gray95", "gray16"))
+        self.scroll_subs.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        # Grid Configuration for 2 columns
+        self.scroll_subs.grid_columnconfigure(0, weight=1)
+        self.scroll_subs.grid_columnconfigure(1, weight=1)
+
+        self.sub_checkboxes = {} 
+        self.current_sub_data = [] 
+
+        # 3. Manual Settings (Bottom)
         ctk.CTkFrame(self.tab_sub, height=2, fg_color=("gray85", "gray30")).pack(fill="x", padx=20, pady=10)
 
         manual_frame = ctk.CTkFrame(self.tab_sub, fg_color="transparent")
@@ -732,7 +593,7 @@ class AppLayoutMixin:
         ctk.CTkCheckBox(row1, text="日文", variable=self.pl_sub_vars['ja'], font=chk_font).pack(side="left", padx=20)
         ctk.CTkCheckBox(row1, text="韓文", variable=self.pl_sub_vars['ko'], font=chk_font).pack(side="left", padx=20)
         
-        CTkToolTip(manual_frame, "當下載「播放清單」或未執行分析時，將嘗試下載此處勾選的語言。\n(若該影片有此語言則下載，沒有則跳過)")
+        CTkToolTip(manual_frame, "適用於播放清單下載：\n將依照「由左至右」的優先順序嘗試下載勾選的字幕。\n若影片包含該字幕則下載，否則跳過。")
         
         # Manual Entry Row
         manual_bg = ctk.CTkFrame(manual_frame, fg_color="transparent")
@@ -750,6 +611,10 @@ class AppLayoutMixin:
         ctk.CTkLabel(manual_bg, text="用逗號或空白分隔", text_color="#1F6AA5", font=self.font_small).pack(side="left", padx=5)
         
         ctk.CTkButton(manual_bg, text="查詢代碼表", width=80, height=24, fg_color="#555555", font=("Microsoft JhengHei UI", 12), command=self.open_lang_table).pack(side="left", padx=10)
+
+    def _on_sub_search_change(self, *args):
+        query = self.entry_sub_search.get()
+        self._refresh_subtitle_view(query)
 
     def open_lang_table(self):
         top = ctk.CTkToplevel(self)
@@ -771,8 +636,242 @@ class AppLayoutMixin:
             ctk.CTkLabel(row, text=code, width=60, anchor="w", font=("Consolas", 11, "bold")).pack(side="left", padx=5)
             ctk.CTkLabel(row, text=name, anchor="w").pack(side="left", padx=5)
 
+    def clear_subtitle_ui(self):
+        """Reset subtitle UI to initial state"""
+        self.current_sub_data = []
+        self.sub_checkboxes = {}
+        if hasattr(self, 'entry_sub_search'): self.entry_sub_search.delete(0, "end")
+        if hasattr(self, 'var_sub_search'): self.var_sub_search.set("")
+        
+        if hasattr(self, 'scroll_subs'):
+            for w in self.scroll_subs.winfo_children():
+                w.destroy()
+            
+            # Add placeholder
+            ctk.CTkLabel(self.scroll_subs, text="(請先分析網址)", text_color="gray", font=("Microsoft JhengHei UI", 16)).pack(pady=40)
+
     def update_subtitle_list_ui(self, info_dict):
-        """根據 ytdlp 資訊，動態更新字幕列表 Checkbox"""
+        """Prepare subtitle data and refresh UI"""
+        self.current_sub_data = [] 
+        self.sub_checkboxes = {} 
+        
+        subtitles = info_dict.get('subtitles', {})
+        if isinstance(subtitles, list):
+            new_subs = {}
+            for item in subtitles:
+                if isinstance(item, str): new_subs[item] = []
+                elif isinstance(item, dict):
+                    code = item.get('code') or item.get('lang') or item.get('language')
+                    if code: new_subs[code] = [item]
+            subtitles = new_subs
+
+        automatic_captions = info_dict.get('automatic_captions', {})
+        if isinstance(automatic_captions, list): 
+             new_auto = {}
+             for item in automatic_captions:
+                if isinstance(item, str): new_auto[item] = []
+                elif isinstance(item, dict):
+                    code = item.get('code') or item.get('lang') or item.get('language')
+                    if code: new_auto[code] = [item]
+             automatic_captions = new_auto
+        
+        # 1. Official Subtitles
+        if subtitles:
+            for code, sub_info in subtitles.items():
+                name = code
+                if sub_info and 'name' in sub_info[0]:
+                    name = f"{sub_info[0]['name']} ({code})"
+                else: 
+                     lang_name = CODE_TO_NAME.get(code)
+                     if lang_name: name = f"[{code}] {lang_name}"
+                
+                self.current_sub_data.append({
+                    "code": code, "name": name, "type": "official"
+                })
+        
+        # 2. Auto Captions
+        if automatic_captions:
+            for code in automatic_captions.keys():
+                lang_name = CODE_TO_NAME.get(code, code)
+                name = f"[自動] {lang_name} ({code})"
+                
+                self.current_sub_data.append({
+                    "code": code, "name": name, "type": "auto"
+                })
+
+        # Initial Render
+        self._refresh_subtitle_view("")
+        
+        if not self.current_sub_data:
+             if hasattr(self, 'lbl_sub_hint'): self.lbl_sub_hint.configure(text="分析完成：無字幕")
+        else:
+             if hasattr(self, 'lbl_sub_hint'): self.lbl_sub_hint.configure(text="分析完成：請勾選要下載的字幕軌")
+
+    def _refresh_subtitle_view(self, query=""):
+        # Clear existing
+        for widget in self.scroll_subs.winfo_children():
+            widget.destroy()
+            
+        if not self.current_sub_data:
+            ctk.CTkLabel(self.scroll_subs, text="無可用字幕 (請先執行分析)", text_color="gray").pack(pady=20)
+            return
+
+        query = query.lower().strip()
+        filtered = []
+        for item in self.current_sub_data:
+            if not query or query in item['code'].lower() or query in item['name'].lower():
+                filtered.append(item)
+        
+        if not filtered:
+             ctk.CTkLabel(self.scroll_subs, text="找不到符合的語言", text_color="gray").pack(pady=20)
+             return
+
+        # Grouping Logic
+        fav_codes = ['zh-tw', 'zh-hant', 'zh-hans', 'zh-cn', 'en', 'en-us', 'ja', 'ko']
+        
+        # Define Regions (Prefix based)
+        asia_codes = ['zh', 'ja', 'ko', 'vi', 'th', 'id', 'ms', 'hi', 'bn', 'my', 'tl', 'lo', 'km', 'mn', 'ne', 'si', 'ur', 'pa']
+        eu_codes = ['fr', 'de', 'it', 'es', 'pt', 'ru', 'uk', 'pl', 'nl', 'sv', 'da', 'no', 'fi', 'el', 'tr', 'cs', 'hu', 'ro', 'bg', 'hr', 'sr', 'sk', 'sl', 'et', 'lv', 'lt']
+        
+        groups = {
+            "🌟 常用語言 (Favorites)": [],
+            "🌏 亞洲地區 (Asia)": [],
+            "🌍 歐美與其他地區 (Europe / Americas / Others)": [],
+            "🤖 自動生成 (Auto-generated)": []
+        }
+        
+        for item in filtered:
+            code = item['code'].lower()
+            base_code = code.split('-')[0]
+            
+            if item['type'] == 'auto':
+                groups["🤖 自動生成 (Auto-generated)"].append(item)
+            elif code in fav_codes:
+                groups["🌟 常用語言 (Favorites)"].append(item)
+            elif base_code in asia_codes:
+                groups["🌏 亞洲地區 (Asia)"].append(item)
+            else:
+                groups["🌍 歐美與其他地區 (Europe / Americas / Others)"].append(item)
+
+        # Render Groups
+        row_idx = 0
+        
+        def create_group_section(title, items):
+            nonlocal row_idx
+            if not items: return
+            
+            # Header (Span 2 cols)
+            header = ctk.CTkLabel(self.scroll_subs, text=title, font=("Microsoft JhengHei UI", 13, "bold"), text_color="#1F6AA5")
+            header.grid(row=row_idx, column=0, columnspan=2, sticky="w", pady=(10, 5), padx=5)
+            row_idx += 1
+            
+            # Sub-grid layout for items
+            for i, item in enumerate(items):
+                code = item['code']
+                
+                # Create/Retrieve Variable
+                if code not in self.sub_checkboxes:
+                    var = ctk.BooleanVar(value=False)
+                    # Auto select logic removed
+                    self.sub_checkboxes[code] = var
+                else:
+                    var = self.sub_checkboxes[code]
+                
+                # Checkbox
+                chk = ctk.CTkCheckBox(self.scroll_subs, text=item['name'], variable=var, font=self.font_text)
+                
+                r = row_idx + (i // 2)
+                c = i % 2
+                chk.grid(row=r, column=c, sticky="w", padx=10, pady=2)
+            
+            # Update row_idx for next group
+            row_idx += (len(items) + 1) // 2
+
+        create_group_section("🌟 常用語言 (Favorites)", groups["🌟 常用語言 (Favorites)"])
+        create_group_section("🌏 亞洲地區 (Asia)", groups["🌏 亞洲地區 (Asia)"])
+        create_group_section("🌍 歐美與其他地區 (Europe / Americas / Others)", groups["🌍 歐美與其他地區 (Europe / Americas / Others)"])
+        create_group_section("🤖 自動生成 (Auto-generated)", groups["🤖 自動生成 (Auto-generated)"])
+
+    def _old_refresh_subtitle_view(self, query=""):
+        # Clear existing
+        for widget in self.scroll_subs.winfo_children():
+            widget.destroy()
+            
+        if not self.current_sub_data:
+            ctk.CTkLabel(self.scroll_subs, text="無可用字幕", text_color="gray").pack(pady=20)
+            return
+
+        query = query.lower().strip()
+        filtered = []
+        for item in self.current_sub_data:
+            # Simple fuzzy match
+            if not query or query in item['code'].lower() or query in item['name'].lower():
+                filtered.append(item)
+        
+        if not filtered:
+             ctk.CTkLabel(self.scroll_subs, text="找不到符合的語言", text_color="gray").pack(pady=20)
+             return
+
+        # Grouping Logic
+        # Common: zh-TW, zh-Hant, zh-Hans, en, ja, ko
+        fav_codes = ['zh-tw', 'zh-hant', 'zh-hans', 'zh-cn', 'en', 'en-us', 'ja', 'ko']
+        
+        groups = {
+            "🌟 常用語言 (Favorites)": [],
+            "🌏 其他語言 (Others)": [],
+            "🤖 自動生成 (Auto-generated)": []
+        }
+        
+        for item in filtered:
+            code_lower = item['code'].lower()
+            if item['type'] == 'auto':
+                groups["🤖 自動生成 (Auto-generated)"].append(item)
+            elif code_lower in fav_codes:
+                groups["🌟 常用語言 (Favorites)"].append(item)
+            else:
+                groups["🌏 其他語言 (Others)"].append(item)
+
+        # Render Groups
+        row_idx = 0
+        
+        def create_group_section(title, items):
+            nonlocal row_idx
+            if not items: return
+            
+            # Header (Span 2 cols)
+            header = ctk.CTkLabel(self.scroll_subs, text=title, font=("Microsoft JhengHei UI", 13, "bold"), text_color="#1F6AA5")
+            header.grid(row=row_idx, column=0, columnspan=2, sticky="w", pady=(10, 5), padx=5)
+            row_idx += 1
+            
+            # Sub-grid layout for items
+            for i, item in enumerate(items):
+                code = item['code']
+                
+                # Create/Retrieve Variable
+                if code not in self.sub_checkboxes:
+                    var = ctk.BooleanVar(value=False)
+                    if code.lower() == 'zh-tw' and item['type'] == 'official': 
+                        var.set(True) 
+                    self.sub_checkboxes[code] = var
+                else:
+                    var = self.sub_checkboxes[code]
+                
+                # Checkbox
+                chk = ctk.CTkCheckBox(self.scroll_subs, text=item['name'], variable=var, font=self.font_text)
+                
+                r = row_idx + (i // 2)
+                c = i % 2
+                chk.grid(row=r, column=c, sticky="w", padx=10, pady=2)
+            
+            # Update row_idx for next group
+            row_idx += (len(items) + 1) // 2
+
+        create_group_section("🌟 常用/推薦 (Recommended)", groups["🌟 常用語言 (Favorites)"])
+        create_group_section("🌏 其他官方字幕 (Official)", groups["🌏 其他語言 (Others)"])
+        create_group_section("🤖 自動翻譯/生成 (Auto-generated)", groups["🤖 自動生成 (Auto-generated)"])
+
+    def _deprecated_update_subtitle_list_ui(self, info_dict):
+        """(Old Version) 根據 ytdlp 資訊，動態更新字幕列表 Checkbox"""
         # 清空
         for widget in self.scroll_subs.winfo_children():
             widget.destroy()
@@ -856,47 +955,89 @@ class AppLayoutMixin:
         cut_card = create_section_card(scroll_container, "剪輯與裁剪 (Trim & Cut)", icon="✂️")
 
         self.var_cut = ctk.BooleanVar(value=False)
+        
+        def reset_time_range():
+            self.entry_start.delete(0, "end")
+            self.entry_end.delete(0, "end")
+            
         def toggle_cut():
-             state = "normal" if self.var_cut.get() else "disabled"
+             is_on = self.var_cut.get()
+             state = "normal" if is_on else "disabled"
              self.entry_start.configure(state=state)
              self.entry_end.configure(state=state)
-             self.lbl_start.configure(text_color="#1F6AA5" if self.var_cut.get() else "gray")
-             self.lbl_end.configure(text_color="#1F6AA5" if self.var_cut.get() else "gray")
+             self.btn_reset_time.configure(state=state)
+             self.lbl_arrow.configure(text_color="#1F6AA5" if is_on else "gray")
+             
+             if is_on:
+                 self.entry_start.configure(placeholder_text="000000")
+                 self.entry_end.configure(placeholder_text="000500")
              
         self.chk_cut = ctk.CTkCheckBox(cut_card, text="啟用時間裁切 (下載部分片段)", font=("Microsoft JhengHei UI", 14, "bold"), variable=self.var_cut, command=toggle_cut)
         self.chk_cut.pack(anchor="w", pady=(5, 15))
-        CTkToolTip(self.chk_cut, "僅下載影片的指定時間範圍，格式為 HH:MM:SS，例如 00:01:30")
+        CTkToolTip(self.chk_cut, "僅下載影片的指定時間範圍，格式為 HHMMSS，例如 000130")
         
-        # Time Inputs
-        time_frame = ctk.CTkFrame(cut_card, fg_color="transparent")
-        time_frame.pack(fill="x", padx=20)
+        # Time Inputs (New Style)
+        time_box = ctk.CTkFrame(cut_card, fg_color=("gray90", "#2B2B2B"), corner_radius=8)
+        time_box.pack(fill="x", padx=10, pady=5)
         
-        self.lbl_start = ctk.CTkLabel(time_frame, text="開始時間 (Start):", font=self.font_text, text_color="gray")
-        self.lbl_start.pack(side="left")
+        inner = ctk.CTkFrame(time_box, fg_color="transparent")
+        inner.pack(padx=15, pady=15)
         
-        self.entry_start = ctk.CTkEntry(time_frame, width=100, state="disabled", placeholder_text="00:00:00", height=35)
-        self.entry_start.pack(side="left", padx=10)
+        # Start
+        self.entry_start = ctk.CTkEntry(inner, width=110, placeholder_text="000000", height=38, 
+                                        font=("Consolas", 15, "bold"), justify="center", state="disabled")
+        self.entry_start.pack(side="left")
         
-        self.lbl_end = ctk.CTkLabel(time_frame, text="結束時間 (End):", font=self.font_text, text_color="gray")
-        self.lbl_end.pack(side="left", padx=(20, 0))
+        # Arrow
+        self.lbl_arrow = ctk.CTkLabel(inner, text="➔", font=("Arial", 20), text_color="gray")
+        self.lbl_arrow.pack(side="left", padx=15)
         
-        self.entry_end = ctk.CTkEntry(time_frame, width=100, state="disabled", placeholder_text="00:05:00", height=35)
-        self.entry_end.pack(side="left", padx=10)
+        # End
+        self.entry_end = ctk.CTkEntry(inner, width=110, placeholder_text="000500", height=38,
+                                      font=("Consolas", 15, "bold"), justify="center", state="disabled")
+        self.entry_end.pack(side="left")
+        
+        # Reset Button (Circular Style)
+        self.btn_reset_time = ctk.CTkButton(inner, text="↺", width=38, height=38, 
+                                            fg_color=("gray85", "gray30"), hover_color=("gray75", "gray40"),
+                                            text_color=("gray20", "gray90"),
+                                            font=("Microsoft JhengHei UI", 20, "bold"),
+                                            corner_radius=19, state="disabled", command=reset_time_range)
+        self.btn_reset_time.pack(side="left", padx=(20, 0))
+        CTkToolTip(self.btn_reset_time, "重設為預設值")
 
         # --- 2. 直播模式 (Live) --- 
         live_card = create_section_card(scroll_container, "直播錄製模式 (Live Stream)", icon="🔴")
         
-        self.var_live_mode = ctk.StringVar(value="now")
+        if not hasattr(self, 'var_live_mode'): self.var_live_mode = ctk.StringVar(value="now")
         
+        # UI <-> Logic Mapping
+        self.live_map = {"從現在開始錄製 (Live Now)": "now", "從開頭追溯 (From Start)": "start"}
+        self.live_map_rev = {v: k for k, v in self.live_map.items()}
+        
+        def on_live_seg_change(val):
+            code = self.live_map.get(val, "now")
+            self.var_live_mode.set(code)
+            if code == "start":
+                self.lbl_live_hint.configure(text="提示：嘗試下載緩衝區內容，從直播開始處抓取 (取決於伺服器)")
+            else:
+                self.lbl_live_hint.configure(text="提示：僅錄製程式開始執行後的內容")
+
         bg_live = ctk.CTkFrame(live_card, fg_color="transparent")
         bg_live.pack(fill="x", pady=5)
         
-        self.rb_live_now = ctk.CTkRadioButton(bg_live, text="從現在開始錄製 (Live Now)", variable=self.var_live_mode, value="now", font=self.font_text, fg_color="#E74C3C", hover_color="#C0392B")
-        self.rb_live_now.pack(anchor="w", pady=8)
+        self.seg_live = ctk.CTkSegmentedButton(bg_live, values=list(self.live_map.keys()), 
+                                               command=on_live_seg_change,
+                                               selected_color="#D93025", selected_hover_color="#B31412", # YouTube Red
+                                               font=("Microsoft JhengHei UI", 13, "bold"), height=35)
+        self.seg_live.pack(fill="x", pady=(0, 10))
         
-        self.rb_live_start = ctk.CTkRadioButton(bg_live, text="從開頭追溯 (Live From Start)", variable=self.var_live_mode, value="start", font=self.font_text, fg_color="#E74C3C", hover_color="#C0392B")
-        self.rb_live_start.pack(anchor="w", pady=8)
-        CTkToolTip(self.rb_live_start, "嘗試下載直播緩衝區，從直播開始處抓取。\n(注意：部分直播可能不支援，取決於 YouTube 緩衝)")
+        # Init State
+        cur_val = self.var_live_mode.get()
+        self.seg_live.set(self.live_map_rev.get(cur_val, list(self.live_map.keys())[0]))
+        
+        self.lbl_live_hint = ctk.CTkLabel(bg_live, text="提示：僅錄製程式開始執行後的內容", text_color="gray", font=self.font_small)
+        self.lbl_live_hint.pack(anchor="w", padx=5)
 
     def setup_advanced_ui(self):
         # 建立捲動區域以容納更多設定
@@ -913,7 +1054,7 @@ class AppLayoutMixin:
             header.pack(fill="x", padx=20, pady=(15, 10))
             
             ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 18)).pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray10", "gray90")).pack(side="left") # Standard Text
             
             # Content Container
             content = ctk.CTkFrame(frame, fg_color="transparent")
@@ -928,29 +1069,67 @@ class AppLayoutMixin:
         # Sub-section: Browser
         b_header = ctk.CTkFrame(cookie_card, fg_color="transparent")
         b_header.pack(fill="x", pady=(5, 10))
-        ctk.CTkLabel(b_header, text="從瀏覽器讀取 (推薦)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(side="left")
+        ctk.CTkLabel(b_header, text="從瀏覽器讀取 (推薦)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="gray").pack(side="left")
         
         lbl_b_help = ctk.CTkLabel(b_header, text="❓", cursor="hand2", font=self.font_small)
         lbl_b_help.pack(side="left", padx=5)
-        CTkToolTip(lbl_b_help, "【說明】\n程式會自動讀取您選擇的瀏覽器中 YouTube 的登入狀態。\n無需手動匯出檔案，設定與更新最方便。\n若無法使用，建議使用下方cookies.txt方式。\n注意：執行下載時建議先將該瀏覽器「完全關閉」，以免讀取失敗。")
+        CTkToolTip(lbl_b_help, "【說明】\n程式會自動讀取您選擇的瀏覽器中 YouTube 的登入狀態。\n無需手動匯出檔案，設定與更新最方便，但穩定度低。\n若無法使用，建議使用下方cookies.txt方式。\n注意：執行下載時建議先將該瀏覽器「完全關閉」，以免讀取失敗。")
         
-        # Browser Grid
+        # Browser Grid (Chips/Pills Style)
         browser_grid = ctk.CTkFrame(cookie_card, fg_color="transparent")
         browser_grid.pack(fill="x", pady=5)
         
         browsers = [
-            ("不使用 (None)", "none"), ("Chrome", "chrome"), ("Edge", "edge"), ("Firefox", "firefox"),
+            ("不使用", "none"), ("Chrome", "chrome"), ("Edge", "edge"), ("Firefox", "firefox"),
             ("Opera", "opera"), ("Brave", "brave"), ("Vivaldi", "vivaldi"), ("Chromium", "chromium")
         ]
         
+        self.browser_btns = {}
+
+        def on_browser_click(val):
+            self.var_cookie_mode.set(val)
+            self.on_cookie_mode_change()
+            update_browser_visuals()
+
+        def update_browser_visuals():
+            current = self.var_cookie_mode.get()
+            for val, btn in self.browser_btns.items():
+                if val == current:
+                    btn.configure(
+                        fg_color="#1F6AA5", 
+                        text_color="white", 
+                        border_width=0,
+                        hover_color="#144870" 
+                    )
+                else:
+                    btn.configure(
+                        fg_color=("white", "#333333"), 
+                        text_color=("gray20", "gray80"), 
+                        border_width=1, 
+                        border_color=("gray70", "gray50"),
+                        hover_color=("gray90", "#404040") 
+                    )
+
         for i, (text, val) in enumerate(browsers):
-            rb = ctk.CTkRadioButton(
-                browser_grid, text=text, variable=self.var_cookie_mode, value=val,
-                font=self.font_text, command=self.on_cookie_mode_change,
-                fg_color="#1F6AA5", hover_color="#144870"
+            btn = ctk.CTkButton(
+                browser_grid, 
+                text=text, 
+                height=32,
+                font=self.font_text,
+                corner_radius=16,
+                fg_color=("white", "#333333"), 
+                border_width=1,
+                border_color=("gray70", "gray50"),
+                text_color=("gray20", "gray80"),
+                hover_color=("gray90", "#404040"), 
+                command=lambda v=val: on_browser_click(v)
             )
-            rb.grid(row=i//4, column=i%4, padx=10, pady=8, sticky="w")
-            
+            btn.grid(row=i//4, column=i%4, padx=6, pady=6, sticky="ew")
+            self.browser_btns[val] = btn
+            browser_grid.grid_columnconfigure(i%4, weight=1)
+
+        update_browser_visuals()
+
         CTkToolTip(browser_grid, "自動讀取瀏覽器登入狀態 (例如 YouTube Premium 會員)。\n執行前建議完全關閉瀏覽器以避免讀取鎖定。")
 
         # Sub-section: File
@@ -958,7 +1137,7 @@ class AppLayoutMixin:
         
         f_header = ctk.CTkFrame(cookie_card, fg_color="transparent")
         f_header.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_header, text="使用 cookies.txt 檔案(穩定)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(side="left")
+        ctk.CTkLabel(f_header, text="使用 cookies.txt (穩定)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="gray").pack(side="left")
         
         lbl_f_help = ctk.CTkLabel(f_header, text="❓", cursor="hand2", font=self.font_small)
         lbl_f_help.pack(side="left", padx=5)
@@ -977,14 +1156,26 @@ class AppLayoutMixin:
             
         make_link(link_box, "[Chrome/Edge 擴充]", "https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc")
         make_link(link_box, "[Firefox 擴充]", "https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/")
+        
 
-        # File Input Area
+        
         f_input_box = ctk.CTkFrame(cookie_card, fg_color="transparent")
         f_input_box.pack(fill="x", padx=10)
         
-        ctk.CTkRadioButton(f_input_box, text="檔案路徑:", variable=self.var_cookie_mode, value="file", 
-                           font=self.font_text, command=self.on_cookie_mode_change, fg_color="#1F6AA5").pack(side="left", padx=(0, 10))
-        
+        def on_file_mode_click():
+            self.var_cookie_mode.set("file")
+            self.on_cookie_mode_change()
+            update_browser_visuals()
+            
+        btn_file_mode = ctk.CTkButton(
+            f_input_box, text="啟用檔案模式", width=100, height=32, corner_radius=16,
+            fg_color="transparent", border_width=1, border_color=("gray70", "gray50"), text_color=("gray20", "gray80"),
+            hover_color=("#D0E0F0", "#3A3A3A"),
+            command=on_file_mode_click
+        )
+        btn_file_mode.pack(side="left", padx=(0, 10))
+        self.browser_btns['file'] = btn_file_mode 
+
         self.entry_cookie_path = ctk.CTkEntry(f_input_box, placeholder_text="請選擇 cookies.txt...", state="disabled", height=35)
         self.entry_cookie_path.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
@@ -994,43 +1185,82 @@ class AppLayoutMixin:
         # --- 2. 效能設定 (Performance) ---
         perf_card = create_section_card(scroll_container, "效能設定 (Performance)", icon="🚀")
         
-        ctk.CTkLabel(perf_card, text="最大同時下載數 (Concurrent Downloads)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
+        ctk.CTkLabel(perf_card, text="最大同時下載數", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
         
         perf_box = ctk.CTkFrame(perf_card, fg_color="transparent")
         perf_box.pack(fill="x", pady=5)
         
         concurrent_values = [str(i) for i in range(1, 11)]
-        self.combo_concurrent = ctk.CTkOptionMenu(perf_box, values=concurrent_values, width=120, height=35, command=self.update_concurrent_label, fg_color="#3E3E3E", button_color="#505050")
+        self.combo_concurrent = ctk.CTkOptionMenu(perf_box, values=concurrent_values, width=120, height=35, command=self.update_concurrent_label, 
+                                                  fg_color="#3E3E3E", button_color="#505050", button_hover_color="#606060", text_color="#FFFFFF",
+                                                  dropdown_fg_color="#F0F0F0", dropdown_hover_color="#CCCCCC", dropdown_text_color="#000000")
         self.combo_concurrent.pack(side="left")
         self.combo_concurrent.set("1")
         
-        ctk.CTkLabel(perf_box, text="(建議值: 1~3，過多可能導致被 YouTube 暫時封鎖)", text_color="gray", font=self.font_small).pack(side="left", padx=15)
+        ctk.CTkLabel(perf_box, text="(建議值: 1~3)", text_color="gray", font=self.font_small).pack(side="left", padx=15)
 
         # --- 3. 網路設定 (Network) ---
         net_card = create_section_card(scroll_container, "網路連接設定 (Network)", icon="🌐")
         
         # UA
-        ctk.CTkLabel(net_card, text="User Agent (偽裝瀏覽器字串)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
+        ctk.CTkLabel(net_card, text="User Agent (偽裝瀏覽器)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
         self.entry_ua = ctk.CTkEntry(net_card, height=35, placeholder_text="預設 (自動隨機)", border_color=("gray70", "gray40"))
         self.entry_ua.pack(fill="x", pady=5)
-        CTkToolTip(self.entry_ua, "若遇網站阻擋，可填入特定瀏覽器的 UA 字串。留空則使用程式內建預設值。")
+        CTkToolTip(self.entry_ua, "若遇網站阻擋，可填入特定瀏覽器的 UA 字串。")
         
         # Proxy
         ctk.CTkLabel(net_card, text="Proxy 代理伺服器", font=self.font_title, text_color="gray").pack(anchor="w", pady=(15, 5))
         self.entry_proxy = ctk.CTkEntry(net_card, height=35, placeholder_text="http://user:pass@host:port", border_color=("gray70", "gray40"))
         self.entry_proxy.pack(fill="x", pady=5)
         CTkToolTip(self.entry_proxy, "若需翻牆或隱藏 IP，請輸入 Proxy (支援 http/https/socks5)。")
+
+        # --- Event Bindings for Immediate Feedback ---
+        self.last_ua = ""
+        self.last_proxy = ""
+
+        def on_net_change(event=None):
+            # Check UA
+            curr_ua = self.entry_ua.get().strip()
+            if curr_ua != self.last_ua:
+                self.last_ua = curr_ua
+                if curr_ua:
+                    self.log(f"[設定變更] User Agent 已更新")
+                    self.show_toast("User Agent 已更新")
+            
+            # Check Proxy
+            curr_proxy = self.entry_proxy.get().strip()
+            if curr_proxy != self.last_proxy:
+                self.last_proxy = curr_proxy
+                if curr_proxy:
+                    self.log(f"[設定變更] Proxy 已更新")
+                    self.show_toast("Proxy 已更新")
+
+        self.entry_ua.bind("<FocusOut>", on_net_change)
+        self.entry_ua.bind("<Return>", on_net_change)
+        self.entry_proxy.bind("<FocusOut>", on_net_change)
+        self.entry_proxy.bind("<Return>", on_net_change)
         
     def on_cookie_mode_change(self):
-        if self.var_cookie_mode.get() == "file":
+        mode = self.var_cookie_mode.get()
+        if mode == "file":
             self.entry_cookie_path.configure(state="normal")
             self.btn_cookie_browse.configure(state="normal", fg_color="#1F6AA5")
+            self.log("[設定變更] Cookie 來源切換為: 檔案 (cookies.txt)")
+            self.show_toast("Cookie 來源: 檔案")
         else:
             self.entry_cookie_path.configure(state="disabled")
             self.btn_cookie_browse.configure(state="disabled", fg_color="#555555")
+            
+            if mode == 'none':
+                 pass
+            else:
+                 self.log(f"[設定變更] Cookie 來源切換為: 瀏覽器 ({mode})")
+                 self.show_toast(f"Cookie 來源: {mode}")
 
     def update_concurrent_label(self, value):
         self.max_concurrent_downloads = int(value)
+        self.log(f"[設定變更] 最大同時下載數: {value}")
+        self.show_toast(f"最大同時下載數: {value}")
             
     def browse_cookie_file(self):
         p = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
@@ -1041,21 +1271,90 @@ class AppLayoutMixin:
 
 
     def setup_log_ui(self):
-        self.txt_log = ctk.CTkTextbox(self.tab_log, font=("Consolas", 12))
-        self.txt_log.pack(fill="both", expand=True, padx=10, pady=10)
+        # 1. 工具列 (Toolbar)
+        toolbar = ctk.CTkFrame(self.tab_log, fg_color="transparent", height=40)
+        toolbar.pack(fill="x", padx=10, pady=(15, 5))
         
-        btn_clear = ctk.CTkButton(self.tab_log, text="清空日誌", font=self.font_btn, height=35, fg_color="#555555", hover_color="#333333", command=self.clear_log)
-        btn_clear.pack(pady=(0, 10))
+        # Title with Icon
+        ctk.CTkLabel(toolbar, text="💻 運行日誌 (Console)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(side="left", padx=5)
+        
+        # Helper functions
+        def copy_logs():
+            if hasattr(self, 'txt_log'):
+                self.clipboard_clear()
+                self.clipboard_append(self.txt_log.get("1.0", "end"))
+                if hasattr(self, 'show_toast'): self.show_toast("已複製日誌內容")
 
+        def clear_logs_action():
+            if hasattr(self, 'txt_log'):
+                self.txt_log.configure(state="normal")
+                self.txt_log.delete("1.0", "end")
+                self.txt_log.configure(state="disabled")
+
+        # Buttons (Clean Style)
+        ctk.CTkButton(
+            toolbar, text="🗑 清空", width=80, height=30, 
+            fg_color="transparent", border_width=1, border_color="#DB3E39", text_color="#DB3E39",
+            hover_color=("#FEE", "#400"), 
+            font=self.font_small, command=clear_logs_action
+        ).pack(side="right", padx=5)
+
+        ctk.CTkButton(
+            toolbar, text="📋 複製全部", width=90, height=30, 
+            fg_color="#1F6AA5", hover_color="#144870", 
+            font=self.font_small, command=copy_logs
+        ).pack(side="right", padx=5)
+
+        # 2. Log Console (Dark Theme Terminal)
+        self.console_container = ctk.CTkFrame(self.tab_log, fg_color="#1E1E1E", corner_radius=8, border_width=1, border_color="#333333")
+        self.console_container.pack(fill="both", expand=True, padx=10, pady=(5, 15))
+        
+        # Textbox (Terminal Style)
+        self.txt_log = ctk.CTkTextbox(
+            self.console_container,
+            font=("Consolas", 13), 
+            text_color="#E0E0E0",  
+            fg_color="#1E1E1E",    
+            scrollbar_button_color="#333333",
+            scrollbar_button_hover_color="#444444",
+            border_width=0,
+            activate_scrollbars=True
+        )
+        self.txt_log.pack(fill="both", expand=True, padx=8, pady=8)
+        self.txt_log.configure(state="disabled") 
+
+    # Deprecated: clear_log is now internal to setup_log_ui, but valid for external calls if any
     def clear_log(self):
-        self.txt_log.delete("1.0", "end")
+        if hasattr(self, 'txt_log'):
+             self.txt_log.configure(state="normal")
+             self.txt_log.delete("1.0", "end")
+             self.txt_log.configure(state="disabled")
         
     def log(self, msg):
         timestamp = time.strftime("%H:%M:%S")
         full_msg = f"[{timestamp}] {msg}\n"
+        
+        # Determine color tag based on content
+        tag = "info"
+        if any(x in msg for x in ["[錯誤]", "Error", "失敗", "系統錯誤"]):
+            tag = "error"
+        elif any(x in msg for x in ["[警告]", "Warning", "無效"]):
+            tag = "warning"
+        elif any(x in msg for x in ["成功", "完成", "啟動下載"]):
+            tag = "success"
+            
         try:
-            self.txt_log.insert("end", full_msg)
+            self.txt_log.configure(state="normal")
+            
+            # Configure colors (Safe to call repeatedly)
+            self.txt_log.tag_config("error", foreground="#FF5555")   # Red
+            self.txt_log.tag_config("warning", foreground="#FFB86C") # Orange/Yellow
+            self.txt_log.tag_config("success", foreground="#50FA7B") # Green
+            self.txt_log.tag_config("info", foreground="#E0E0E0")    # Light Gray
+            
+            self.txt_log.insert("end", full_msg, tag)
             self.txt_log.see("end")
+            self.txt_log.configure(state="disabled")
         except: pass
         print(full_msg.strip())
 
@@ -1239,20 +1538,23 @@ class AppLayoutMixin:
         
         quotes = [
             "這裡沒有 Bug，只有還沒被發現的 Feature 🐛",
-            "程式碼寫得很爛，但至少能動 ",
+            "程式碼寫得爛，但至少能動 ",
             "如果不 work，請嘗試重新開機 ",
             "由 10% 的技術和 90% 的咖啡驅動 ☕",
             "這不是卡住，是在思考人生 ",
             "不要問我為什麼，它就是能跑 🏃",
             "警告：可能包含少量人工智慧 (和大量人工智障) ",
-            "如果run不了，至少還能walk",
+            "如果 run不了，至少還能 walk",
             "只要 Code 能跑，Bug 就是種裝飾",
             "程式碼與我，只有一個能動",
             "只要心態不崩，程式就不算崩",
             "明明不是猴子卻一直在抓 Bug",
             "昨天解決一個 Bug，現在我有八個 Bug",
             "過程全是 Bug，至少還能 Run",
-            "點擊這裡並沒有彩蛋 (真的沒有) 🥚"
+            "點擊這裡並沒有彩蛋 (真的沒有) 🥚",
+            "5 mins Coding + 8 hours Debugging = still not moving",
+            "99% 人工智障 + 1% 新鮮的肝 = 動不了的垃圾",
+            "程式碼不動，是因為它在沉思人生",
         ]
         
         def change_quote(event=None):
@@ -1324,4 +1626,97 @@ class AppLayoutMixin:
             "Copyright © 2025 nununuuuu. Powered by yt-dlp & CustomTkinter."
         )
         ctk.CTkLabel(footer_frame, text=disclaimer, text_color="gray", font=("Microsoft JhengHei UI", 10), justify="center").pack()
+
+    def check_for_updates(self):
+        """檢查並自動更新 yt-dlp"""
+        self.btn_update_ytdlp.configure(state="disabled", text="檢查中...")
+        
+        def run_check():
+            try:
+                import json
+                import urllib.request
+                
+                # 1. 取得 PyPI 最新版本資訊
+                url = "https://pypi.org/pypi/yt-dlp/json"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                    latest_version = data['info']['version']
+                
+                current_version = yt_dlp.version.__version__ if yt_dlp else "0.0.0"
+                
+                def parse_version(v_str):
+                    try:
+                        return tuple(map(int, v_str.split('.')))
+                    except:
+                        return (0, 0, 0)
+
+                if parse_version(latest_version) <= parse_version(current_version):
+                    self.after(0, lambda: messagebox.showinfo("檢查更新", f"版本已為最新版本 ({current_version})"))
+                    self.after(0, lambda: self.btn_update_ytdlp.configure(state="normal", text="↻ 更新核心組件 (yt-dlp)"))
+                    return
+
+                # 詢問並執行更新
+                def ask_and_update():
+                    if messagebox.askyesno("發現新版本", f"現有版本: {current_version}\n最新版本: {latest_version}\n\n是否立即下載並更新？"):
+                        self.btn_update_ytdlp.configure(text=f"下載新版本 {latest_version}...")
+                        threading.Thread(target=run_download, args=(data,), daemon=True).start()
+                    else:
+                        self.btn_update_ytdlp.configure(state="normal", text="↻ 更新核心組件 (yt-dlp)")
+                
+                self.after(0, ask_and_update)
+
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("更新失敗", f"更新錯誤: {str(e)}"))
+                self.after(0, lambda: self.btn_update_ytdlp.configure(state="normal", text="↻ 更新核心組件 (yt-dlp)"))
+
+        def run_download(data):
+            try:
+                import zipfile
+                import urllib.request
+                from io import BytesIO
+                
+                download_url = None
+                for file_info in data['urls']:
+                    if file_info['packagetype'] == 'bdist_wheel':
+                        download_url = file_info['url']
+                        break
+                
+                if not download_url:
+                    raise Exception("找不到可用的更新檔案 (.whl)")
+
+                if getattr(sys, 'frozen', False):
+                    base_path = os.path.dirname(sys.executable)
+                else:
+                    base_path = os.path.dirname(os.path.abspath(__file__))
+                    
+                lib_dir = os.path.join(base_path, 'lib')
+                if not os.path.exists(lib_dir):
+                    os.makedirs(lib_dir)
+
+                with urllib.request.urlopen(download_url, timeout=60) as response:
+                    whl_data = response.read()
+                    
+                with zipfile.ZipFile(BytesIO(whl_data)) as zip_ref:
+                    for member in zip_ref.namelist():
+                        if member.startswith('yt_dlp/'):
+                            zip_ref.extract(member, lib_dir)
+                
+                def on_success():
+                    messagebox.showinfo("更新成功", f"yt-dlp 已更新，點擊確定將重啟程式。")
+                    import subprocess
+                    current_file = sys.executable if getattr(sys, 'frozen', False) else __file__
+                    if getattr(sys, 'frozen', False):
+                        subprocess.Popen([sys.executable])
+                    else:
+                        subprocess.Popen([sys.executable, current_file])
+                    os._exit(0)
+
+                self.after(0, on_success)
+
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("更新失敗", str(e)))
+                self.after(0, lambda: self.btn_update_ytdlp.configure(state="normal", text="↻ 更新核心組件 (yt-dlp)"))
+
+        threading.Thread(target=run_check, daemon=True).start()
 
