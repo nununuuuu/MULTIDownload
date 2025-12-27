@@ -168,6 +168,8 @@ class YtDlpCore:
         if not config.get('save_path'): config['save_path'] = os.getcwd()
 
         class MyLogger:
+            def debug(self, msg): pass
+            def info(self, msg): pass
             def warning(self, msg):
                 if log_callback: log_callback(f"[警告] {self._clean(msg)}")
             def error(self, msg):
@@ -311,6 +313,11 @@ class YtDlpCore:
                     if attempt == max_retries - 1:
                         message = "檔案被佔用 (WinError 32)\n請關閉防毒軟體或檢查檔案是否被開啟。"
                     continue 
+                elif ("could not find" in err_msg.lower() or "cookie database" in err_msg.lower() or "copy" in err_msg.lower()) and "cookie" in err_msg.lower():
+                    if 'cookiesfrombrowser' in opts:
+                        if log_callback: log_callback(f"[警告] 無法讀取瀏覽器 Cookie (或是瀏覽器開啟中)，將自動切換為訪客模式重試...")
+                        del opts['cookiesfrombrowser']
+                        continue
                 else: 
                     message = f"下載錯誤: {e}"
                     break

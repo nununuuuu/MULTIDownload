@@ -389,18 +389,29 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
     def _auto_fetch_title(self, config):
         """Background thread to fetch title for waiting tasks"""
         core = YtDlpCore()
+        success = False
+        
+        # 1. Try with user settings (Cookies, Proxy, etc.)
         try:
             info = core.fetch_video_info(config['url'], cookie_type=config['cookie_type'], cookie_path=config['cookie_path'], user_agent=config.get('user_agent'), proxy=config.get('proxy'))
             
-            if info and 'title' in info and info['title'] != '未知標題':
+            if info and 'title' in info and info['title'] != '未知標題' and 'error' not in info:
                 config['default_title'] = info['title']
-            else:
-                config['default_title'] = "" 
-            
-            self.after(0, self.update_queue_ui)
-        except: 
-            config['default_title'] = ""
-            self.after(0, self.update_queue_ui)
+                success = True
+        except: pass
+        
+        # 2. Fallback: Try without Cookies (if first attempt failed)
+        # This handles cases like "Chrome cookie DB locked"
+        if not success:
+            try:
+                # Retry with no cookies, but keep proxy/UA if set
+                info = core.fetch_video_info(config['url'], cookie_type='none', user_agent=config.get('user_agent'), proxy=config.get('proxy'))
+                if info and 'title' in info and info['title'] != '未知標題' and 'error' not in info:
+                    config['default_title'] = info['title']
+            except: 
+                config['default_title'] = ""
+
+        self.after(0, self.update_queue_ui)
 
     def show_toast(self, message, duration=2000, color="#01814A"):
         if hasattr(self, 'current_toast') and self.current_toast:

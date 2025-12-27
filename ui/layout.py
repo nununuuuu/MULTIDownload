@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+from PIL import Image, ImageOps
 import threading
 import webbrowser
 import sys
@@ -136,16 +137,17 @@ class AppLayoutMixin:
         self.sidebar_frame.grid_columnconfigure(1, weight=1)
         
         # (Icon, TooltipText)
+        # (IconFilename, TooltipText, FallbackChar)
         self.sidebar_items = {
-            "Basic": ("⌂", "基本選項"),      
-            "Format": ("🎞", "格式/畫質"),
-            "Sub": ("🔡", "字幕設定"),
-            "Output": ("✂", "時間裁切"),
-            "Adv": ("🛠", "進階選項"),
-            "Tasks": ("📥", "任務列表"),
-            "Log": ("⏱", "系統日誌"),
-            "Settings": ("⚙", "設定"),
-            "About": ("ⓘ", "關於")
+            "Basic": ("home.png", "基本選項", "⌂"),      
+            "Format": ("video.png", "格式/畫質", "🎞"),
+            "Sub": ("sub.png", "字幕設定", "🔡"),
+            "Output": ("cut.png", "時間裁切", "✂"),
+            "Adv": ("adv.png", "進階選項", "🛠"),
+            "Tasks": ("tasks.png", "任務列表", "📥"),
+            "Log": ("log.png", "系統日誌", "⏱"),
+            "Settings": ("settings.png", "設定", "⚙"),
+            "About": ("about.png", "關於", "ⓘ")
         }
         
         # 上方按鈕
@@ -163,22 +165,51 @@ class AppLayoutMixin:
              if key not in self.sidebar_items: continue
              self._create_sidebar_item(key, 11+i)
 
+    def _load_icon(self, filename):
+        try:
+            # Check runtime path vs dev path
+            base_path = r"c:\mypython\MULTIDownload\icon" 
+            path = os.path.join(base_path, filename)
+            if os.path.exists(path):
+                img_white = Image.open(path).convert("RGBA")
+                
+                r, g, b, a = img_white.split()
+                img_black = Image.merge("RGBA", (r.point(lambda _: 0), g.point(lambda _: 0), b.point(lambda _: 0), a))
+                
+                return ctk.CTkImage(light_image=img_black, dark_image=img_white, size=(24, 24))
+        except: pass
+        return None
+
     def _create_sidebar_item(self, key, row_idx):
-        icon, tooltip_text = self.sidebar_items.get(key, ("?", ""))
+        filename, tooltip_text, fallback_char = self.sidebar_items.get(key, ("", "", "?"))
         
         # 1. Indicator Strip (Left)
         indicator = ctk.CTkFrame(self.sidebar_frame, width=4, height=40, corner_radius=2, fg_color="transparent")
-        indicator.grid(row=row_idx, column=0, pady=5, sticky="e") # Right align in col 0 to touch button
+        indicator.grid(row=row_idx, column=0, pady=5, sticky="e") 
         self.nav_indicators[key] = indicator
         
         # 2. Icon Button
-        # hover_color="transparent" to avoid the blocky background, or use a very subtle gray if needed
-        btn = ctk.CTkButton(self.sidebar_frame, text=icon, anchor="center", 
-                            fg_color="transparent", text_color=("gray50", "gray70"), 
-                            hover_color=("gray90", "gray25"),
-                            font=self.font_sidebar_icon, height=50, corner_radius=10,
-                            width=50,
-                            command=lambda k=key: self.select_frame(k))
+        icon_img = self._load_icon(filename)
+        
+        btn_kwargs = {
+            "text": "",
+            "image": icon_img,
+            "anchor": "center",
+            "fg_color": "transparent",
+            "hover_color": ("gray90", "gray25"),
+            "height": 50,
+            "width": 50,
+            "corner_radius": 10,
+            "command": lambda k=key: self.select_frame(k)
+        }
+        
+        if not icon_img:
+            btn_kwargs["text"] = fallback_char
+            btn_kwargs["font"] = self.font_sidebar_icon
+            btn_kwargs["text_color"] = ("gray50", "gray70")
+            del btn_kwargs["image"]
+
+        btn = ctk.CTkButton(self.sidebar_frame, **btn_kwargs)
         btn.grid(row=row_idx, column=1, sticky="nsew", pady=2, padx=(5, 10))
         self.nav_btns[key] = btn
         CTkToolTip(btn, tooltip_text)
@@ -265,41 +296,44 @@ class AppLayoutMixin:
         self.tab_basic.grid_rowconfigure(2, weight=1)
         self.tab_basic.grid_columnconfigure(0, weight=1)
         
-        # Main Container (The Island)
+        # Main Container (The Island) 
         island_frame = ctk.CTkFrame(self.tab_basic, fg_color="transparent")
-        island_frame.grid(row=1, column=0, sticky="n") # Centered content
+        island_frame.grid(row=1, column=0, sticky="n") 
         
         # --- 1. Search Section ---
         search_section = ctk.CTkFrame(island_frame, fg_color="transparent")
-        search_section.pack(pady=(0, 20)) # Removed fill="x" to center the bar naturally
+        search_section.pack(fill="x", pady=(0, 20)) 
         
-        # Input Bar (Pill Shape)
-        input_bar = ctk.CTkFrame(search_section, fg_color=("white", "#2d3436"), corner_radius=30, border_width=1, border_color=("#E5E5E5", "gray30"))
-        input_bar.pack(ipady=5) # Removed fill="x", it will now hug the content
+        # Input Bar
+        input_bar = ctk.CTkFrame(search_section, fg_color=("white", "#2b2b2b"), corner_radius=25, border_width=2, border_color=("#B0B0B0", "#484848"))
+        input_bar.pack(fill="x", ipady=5)
+
+ 
         
-        # Paste Button
+        # 1. Analyze Button (Rightmost)
+        self.btn_analyze = ctk.CTkButton(input_bar, text="分析網址", height=48, width=130, font=("Microsoft JhengHei UI", 16, "bold"), 
+                                         fg_color=("#1F6AA5", "#3B8ED0"), hover_color=("#144870", "#1F6AA5"), corner_radius=24, command=self.on_fetch_info,
+                                         text_color="white")
+        self.btn_analyze.pack(side="right", padx=8)
+
+        # 2. Paste Button (Left of Analyze)
         def paste_url():
             try:
                 self.entry_url.delete(0, 'end')
                 self.entry_url.insert(0, self.clipboard_get())
             except: pass
             
-        btn_paste = ctk.CTkButton(input_bar, text="📋", width=45, height=45, fg_color="transparent", hover_color=("gray90", "gray40"), 
-                                  text_color=("gray50", "gray80"), font=("Segoe UI Emoji", 20), command=paste_url, corner_radius=22)
-        btn_paste.pack(side="left", padx=(10, 0))
-        CTkToolTip(btn_paste, "貼上網址")
+        btn_paste = ctk.CTkButton(input_bar, text="📋", width=50, height=50, fg_color="transparent", hover_color=("gray90", "#3a3a3a"), 
+                                  text_color=("gray50", "gray80"), font=("Segoe UI Emoji", 22), command=paste_url, corner_radius=25)
+        btn_paste.pack(side="right", padx=(5, 5))
+        # Removed Tooltip as requested
 
-        # URL Entry
-        self.entry_url = ctk.CTkEntry(input_bar, width=420, height=50, font=("Microsoft JhengHei UI", 16), 
-                                      placeholder_text="在此貼上 YouTube / Twitch 連結...", 
+        # 3. URL Entry (Fills remaining space)
+        # Give it a good initial width so the bar doesn't shrink
+        self.entry_url = ctk.CTkEntry(input_bar, width=450, height=50, font=("Microsoft JhengHei UI", 16), 
+                                      placeholder_text="貼上影片連結...", 
                                       fg_color="transparent", border_width=0, text_color=("gray20", "white"))
-        self.entry_url.pack(side="left", padx=10)
-        
-        # Analyze Button
-        self.btn_analyze = ctk.CTkButton(input_bar, text="分析網址", height=45, width=120, font=("Microsoft JhengHei UI", 15, "bold"), 
-                                         fg_color="#1F6AA5", hover_color="#144870", corner_radius=22, command=self.on_fetch_info,
-                                         text_color="white")
-        self.btn_analyze.pack(side="right", padx=10)
+        self.entry_url.pack(side="left", padx=15, fill="x", expand=True)
         
         # sub_row for Hints
         sub_row = ctk.CTkFrame(search_section, fg_color="transparent")
@@ -315,17 +349,22 @@ class AppLayoutMixin:
         hint_label.pack(side="top", anchor="center")
 
 
-        # --- 2. Settings Section (Compact Attached) ---
-        settings_card = ctk.CTkFrame(island_frame, fg_color=("white", "#2d3436"), corner_radius=12, border_width=1, border_color=("#E5E5E5", "gray30"))
-        settings_card.pack(fill="x")
+        # --- 2. Settings Section (Modern Card) ---
+        # Added nice soft border and distinct background
+        settings_card = ctk.CTkFrame(island_frame, fg_color=("white", "#232323"), corner_radius=15, border_width=1, border_color=("#E5E5E5", "#333333"))
+        settings_card.pack(fill="x", pady=10)
         
         # Settings Content
         s_content = ctk.CTkFrame(settings_card, fg_color="transparent")
-        s_content.pack(fill="x", padx=25, pady=20)
+        s_content.pack(fill="x", padx=30, pady=25)
         s_content.grid_columnconfigure(1, weight=1)
         
-        # Header
-        ctk.CTkLabel(s_content, text="⚙️ 下載設定", font=("Microsoft JhengHei UI", 14, "bold"), text_color=("gray40", "gray80")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        # Header - With decorative accent
+        header_frame = ctk.CTkFrame(s_content, fg_color="transparent")
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
+        
+        ctk.CTkFrame(header_frame, width=4, height=18, fg_color="#1F6AA5", corner_radius=2).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(header_frame, text="快速設定", font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
 
         # Path
         ctk.CTkLabel(s_content, text="儲存位置", font=("Microsoft JhengHei UI", 13), text_color=("gray40", "gray60")).grid(row=1, column=0, sticky="w", pady=5)
@@ -919,7 +958,7 @@ class AppLayoutMixin:
         
         f_header = ctk.CTkFrame(cookie_card, fg_color="transparent")
         f_header.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_header, text="使用 cookies.txt 檔案", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(side="left")
+        ctk.CTkLabel(f_header, text="使用 cookies.txt 檔案(穩定)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(side="left")
         
         lbl_f_help = ctk.CTkLabel(f_header, text="❓", cursor="hand2", font=self.font_small)
         lbl_f_help.pack(side="left", padx=5)
