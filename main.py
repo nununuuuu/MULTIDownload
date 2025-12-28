@@ -776,12 +776,12 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # 建立進度視窗
         progress_win = ctk.CTkToplevel(self)
         progress_win.title("核心安裝中")
-        progress_win.geometry("300x150")
+        progress_win.geometry("300x120")
         progress_win.attributes("-topmost", True) # 置頂
         
         # 讓視窗居中
         x = self.winfo_x() + (self.winfo_width() // 2) - 150
-        y = self.winfo_y() + (self.winfo_height() // 2) - 75
+        y = self.winfo_y() + (self.winfo_height() // 2) - 60
         progress_win.geometry(f"+{x}+{y}")
         
         # 進度標籤
@@ -928,13 +928,31 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 data = resp.json()
                 latest_tag = data.get("tag_name", "Unknown")
                 
-                if latest_tag != APP_VERSION:
+                # --- 版本比對邏輯 (更新) ---
+                def parse_version(v_str):
+                    """移除 v 前綴並轉為 tuple 進行比對 (e.g. 'v2025.12.28' -> (2025, 12, 28))"""
+                    try:
+                        # 移除 'v' 或 'V'，並移除空白
+                        clean_v = v_str.lower().lstrip('v').strip()
+                        # 分割並轉為整數
+                        return tuple(map(int, clean_v.split('.')))
+                    except ValueError:
+                        return (0, 0, 0)
+
+                remote_ver = parse_version(latest_tag)
+                local_ver = parse_version(APP_VERSION)
+
+                # 只有當 雲端版本 > 本地版本 時才提示
+                if remote_ver > local_ver:
                     download_url = ""
                     # 優先尋找 .zip (全量更新)
                     for asset in data.get("assets", []):
-                        if asset["name"].endswith(".zip"):
+                        # 排除 Source code (雖然 API 通常不包含，但以防萬一) 並優先抓取主程式
+                        if asset["name"].endswith(".zip") and "Source code" not in asset["name"]:
                             download_url = asset["browser_download_url"]
-                            break
+                            # 如果檔名包含 MULTIDownload 或 update，則是最佳目標，直接 break
+                            if "MULTIDownload" in asset["name"] or "update" in asset["name"].lower():
+                                break
                     
                     # 其次尋找 .exe (快速更新)
                     if not download_url:
@@ -956,7 +974,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     else:
                          tk.messagebox.showwarning("無法更新", f"發現新版本 {latest_tag}，但在發布文件中找不到 .zip 或 .exe 檔。")
                 else:
-                    tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。")
+                    # 若 remote <= local (包含相等)，視為不需更新
+                    tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。\n(雲端最新: {latest_tag})")
             elif resp.status_code == 404:
                 tk.messagebox.showerror("檢查失敗", "找不到發布版本 (GitHub Repo 未發布 Release 或設為私有)。")
             else:

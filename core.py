@@ -158,11 +158,18 @@ class YtDlpCore:
             if finish_callback: finish_callback(False, "核心遺失: 未安裝 yt-dlp，請至設定頁面執行更新。")
             return
 
-        # 鎖定程式所在目錄尋找 ffmpeg
+        # 鎖定程式所在目錄尋找 ffmpeg (優先順序: 當前目錄 -> bin 子目錄 -> 系統環境變數)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         ffmpeg_loc = None
-        if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')): ffmpeg_loc = script_dir
-        elif os.path.exists(os.path.join(script_dir, 'ffmpeg')): ffmpeg_loc = script_dir
+        
+        # 1. Check root dir
+        if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'ffmpeg')):
+            ffmpeg_loc = script_dir
+        # 2. Check bin/ subdir
+        elif os.path.exists(os.path.join(script_dir, 'bin', 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'bin', 'ffmpeg')):
+             ffmpeg_loc = os.path.join(script_dir, 'bin')
+        
+        # 3. Else: remains None (yt-dlp will use system PATH)
         
         # Ensure config has save_path
         if not config.get('save_path'): config['save_path'] = os.getcwd()
