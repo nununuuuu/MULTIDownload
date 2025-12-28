@@ -1395,26 +1395,30 @@ class AppLayoutMixin:
             import re
             import os
             import tkinter as tk 
-            import textwrap # For dedenting indented string
+            import textwrap 
             
-            # --- 內嵌日誌內容 (免打包) ---
-            # build_onedir.py 會自動尋找並更新下列區塊
-            # <CHANGELOG_INJECTION_START>
-            CHANGELOG_TEXT = """
-            # 更新日誌
-            
-            ## [2025.12.28] 
-            
-            ### 新增功能
-            - **設定自動儲存**: 現在程式會自動記憶您的偏好設定（包含：下載路徑、Cookie 模式、User Agent、最大同時下載數），下次開啟時無需重新設定。
-            - **Proxy 設定優化**: 新增「記住設定」開關，讓您可以選擇是否要儲存 Proxy 伺服器資訊。
-            
-            ### 優化與修正
-            - **版本檢查機制**: 優化了新版本的檢查邏輯，避免在特定情況下出現錯誤的更新提示。
-            
-            """
-            # <CHANGELOG_INJECTION_END>
-            # ---------------------------
+            # --- Changelog Loading Logic ---
+            # 1. 優先嘗試匯入由 build_onedir.py 生成的靜態檔案 (打包版)
+            try:
+                from .changelog_gen import CHANGELOG_TEXT
+            except ImportError:
+                # 2. 開發模式：動態讀取專案根目錄的 CHANGELOG.md
+                CHANGELOG_TEXT = ""
+                try:
+                    import sys
+                    if getattr(sys, 'frozen', False):
+                        base = os.path.dirname(sys.executable)
+                    else:
+                        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # ui/../
+                    
+                    log_file = os.path.join(base, "CHANGELOG.md")
+                    if os.path.exists(log_file):
+                        with open(log_file, "r", encoding="utf-8") as f:
+                            CHANGELOG_TEXT = f.read()
+                    else:
+                        CHANGELOG_TEXT = "## [Dev]\n目前為開發模式，未偵測到 CHANGELOG.md。"
+                except Exception as e:
+                    CHANGELOG_TEXT = f"Error loading changelog: {e}"
 
             content = textwrap.dedent(CHANGELOG_TEXT).strip()
             

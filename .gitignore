@@ -1,0 +1,41 @@
+# --- Python Basic ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual Environment ---
+.venv/
+venv/
+env/
+
+# --- Specific Config & Data ---
+# 忽略使用者的設定檔，但保留目錄結構 (如果是 data/ 整個忽略也可以，看需求)
+data/config.json
+
+# --- Build Artifacts (PyInstaller) ---
+build/
+dist/
+*.spec
+
+# --- Downloaded Binaries / Core ---
+# 這些通常很大且可以重新下載，不建議放入 Git
+bin/
+lib/
+*.exe
+
+# --- Temporary / Generated Files ---
+ui/changelog_gen.py
+
+# --- IDE Settings (Optional) ---
+.vscode/
+.idea/
+.history/
+
+
+# --- Build Scripts ---
+build_onedir.py
+build_onefile.py
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
