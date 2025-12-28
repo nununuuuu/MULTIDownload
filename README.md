@@ -33,6 +33,11 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
 - **車用相容模式**：一鍵勾選「H.264 (相容模式)」，鎖定 H264 視訊 + AAC 音訊，確保舊款車機與電視完美播放。
 - **會員限定存取**：內建瀏覽器 Cookie 讀取 (Chrome/Edge/Firefox)，免匯出檔案即可下載會員影片。
 
+### 💾 智慧設定記憶
+- **自動儲存**：無需手動存檔，程式會自動記憶您的下載路徑、User Agent、Cookie 模式與最大同時下載數。
+- **Proxy 記憶**：可選擇記憶 Proxy 設定，方便需透過代理伺服器連線的用戶。
+- **內建更新日誌**：直接於「關於」頁面查看版本變更，無需尋找外部檔案，更新資訊隨手可得。
+
 ---
 
 ## 🛠️ 安裝與使用
@@ -66,6 +71,7 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
      python build_onedir.py
      ```
      產物位於 `dist/MULTIDownload` 資料夾。
+     *(注意：此腳本會自動抓取 `CHANGELOG.md` 內容並注入至 `ui/layout.py`，實現免打包日誌檔案的功能)*
 
    - **Onefile 模式 (單一 EXE)**:
      ```bash

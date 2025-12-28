@@ -225,6 +225,105 @@ class AppLayoutMixin:
         )
         self.btn_add.grid(row=0, column=4, padx=(5, 0))
 
+    def create_about_page(self):
+        # This method is assumed to exist or be created based on the instruction.
+        # The content below is derived from the user's provided 'Code Edit' snippet
+        # which implies these buttons are part of an 'about_frame'.
+        # Since 'self.about_frame' is not defined in the provided context,
+        # this is a placeholder for where these buttons would logically go.
+        # For the purpose of this edit, I'm placing it as a new method.
+        
+        # Placeholder for self.about_frame, assuming it's a CTkFrame
+        # If this method is called, self.about_frame should be initialized.
+        if not hasattr(self, 'about_frame'):
+            self.about_frame = ctk.CTkFrame(self.frames["About"], fg_color="transparent")
+            self.about_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        btn_check_update = ctk.CTkButton(
+            self.about_frame, text="檢查更新", command=self.check_app_update,
+            width=120, height=32, corner_radius=16, font=self.font_btn # Changed font to self.font_btn for consistency
+        )
+        btn_check_update.pack(pady=10)
+        
+        # [New] 查看更新日誌按鈕
+        btn_changelog = ctk.CTkButton(
+            self.about_frame, text="查看更新日誌", command=self.show_changelog,
+            width=120, height=32, corner_radius=16, fg_color="transparent", border_width=1,
+            text_color=("gray10", "gray90"), hover_color=("gray70", "gray30")
+        )
+        btn_changelog.pack(pady=5)
+        
+        # Author / Repo Info
+        # ... (rest of the file) ...
+
+    def show_changelog(self):
+        """讀取並顯示 CHANGELOG.md (最近 5 次更新)"""
+        import os
+        import sys
+        import re
+        import customtkinter as ctk
+        
+        try:
+            # 1. 決定檔案路徑
+            if getattr(sys, 'frozen', False):
+                base_path = os.path.dirname(sys.executable)
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+                # 在開發模式下，layout.py 在 ui/ 資料夾，需往上一層
+                if os.path.basename(base_path) == "ui":
+                    base_path = os.path.dirname(base_path)
+
+            log_path = os.path.join(base_path, "CHANGELOG.md")
+            
+            content = "找不到更新日誌檔案。"
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    full_content = f.read()
+                
+                # 2. 簡易解析：只取前 5 個版本
+                # 假設版本標題格式為 "## [YYYY..."
+                # Split by version header, keeping the delimiter
+                parts = re.split(r'(^## \[)', full_content, flags=re.MULTILINE)
+                
+                # parts[0] is usually header (ChangeLog title), subsequent are versions
+                # reconstruct
+                display_text = parts[0] 
+                count = 0
+                
+                # 從分割後的 list 重組，parts[i] 是 "## [", parts[i+1] 是內容
+                for i in range(1, len(parts), 2):
+                    if count >= 1: break # 只顯示最新的 1 次
+                    if i+1 < len(parts):
+                        display_text += parts[i] + parts[i+1]
+                        count += 1
+                
+                content = display_text.strip()
+            
+            # 3. 顯示視窗
+            top = ctk.CTkToplevel(self)
+            top.title("本次更新內容")
+            top.geometry("600x500")
+            
+            # Center window
+            x = self.winfo_x() + (self.winfo_width() // 2) - 300
+            y = self.winfo_y() + (self.winfo_height() // 2) - 250
+            top.geometry(f"+{x}+{y}")
+            
+            top.attributes("-topmost", True)
+            
+            textbox = ctk.CTkTextbox(top, font=("Consolas", 14), wrap="word")
+            textbox.pack(fill="both", expand=True, padx=10, pady=10)
+            textbox.insert("1.0", content)
+            textbox.configure(state="disabled") # Read-only
+            
+        except Exception as e:
+            # Assuming self.show_toast exists in the main App class
+            if hasattr(self, 'show_toast'):
+                self.show_toast("錯誤", f"無法讀取日誌: {e}")
+            else:
+                print(f"Error reading changelog: {e}")
+
+
     def setup_basic_ui(self):
         # --- Absolute Vertical Centering Layout ---
         # Grid: Row 0 (Spacer), Row 1 (Content), Row 2 (Spacer)
@@ -354,6 +453,7 @@ class AppLayoutMixin:
         if filename:
             self.entry_path.delete(0, "end")
             self.entry_path.insert(0, filename)
+            if hasattr(self, 'save_config'): self.save_config()
 
 
 
@@ -1090,6 +1190,7 @@ class AppLayoutMixin:
             self.var_cookie_mode.set(val)
             self.on_cookie_mode_change()
             update_browser_visuals()
+            if hasattr(self, 'save_config'): self.save_config()
 
         def update_browser_visuals():
             current = self.var_cookie_mode.get()
@@ -1166,6 +1267,7 @@ class AppLayoutMixin:
             self.var_cookie_mode.set("file")
             self.on_cookie_mode_change()
             update_browser_visuals()
+            if hasattr(self, 'save_config'): self.save_config()
             
         btn_file_mode = ctk.CTkButton(
             f_input_box, text="啟用檔案模式", width=100, height=32, corner_radius=16,
@@ -1209,7 +1311,22 @@ class AppLayoutMixin:
         CTkToolTip(self.entry_ua, "若遇網站阻擋，可填入特定瀏覽器的 UA 字串。")
         
         # Proxy
-        ctk.CTkLabel(net_card, text="Proxy 代理伺服器", font=self.font_title, text_color="gray").pack(anchor="w", pady=(15, 5))
+        proxy_header = ctk.CTkFrame(net_card, fg_color="transparent")
+        proxy_header.pack(fill="x", pady=(15, 5))
+        
+        ctk.CTkLabel(proxy_header, text="Proxy 代理伺服器", font=self.font_title, text_color="gray").pack(side="left")
+        
+        self.var_remember_proxy = ctk.BooleanVar(value=False)
+        def on_proxy_toggle():
+             if hasattr(self, 'save_config'): self.save_config()
+             
+        self.chk_remember_proxy = ctk.CTkSwitch(
+            proxy_header, text="記住設定", variable=self.var_remember_proxy, 
+            font=self.font_small, width=80, height=20,
+            command=on_proxy_toggle, progress_color="#1F6AA5"
+        )
+        self.chk_remember_proxy.pack(side="right")
+
         self.entry_proxy = ctk.CTkEntry(net_card, height=35, placeholder_text="http://user:pass@host:port", border_color=("gray70", "gray40"))
         self.entry_proxy.pack(fill="x", pady=5)
         CTkToolTip(self.entry_proxy, "若需翻牆或隱藏 IP，請輸入 Proxy (支援 http/https/socks5)。")
@@ -1226,6 +1343,7 @@ class AppLayoutMixin:
                 if curr_ua:
                     self.log(f"[設定變更] User Agent 已更新")
                     self.show_toast("User Agent 已更新")
+                if hasattr(self, 'save_config'): self.save_config()
             
             # Check Proxy
             curr_proxy = self.entry_proxy.get().strip()
@@ -1261,6 +1379,7 @@ class AppLayoutMixin:
         self.max_concurrent_downloads = int(value)
         self.log(f"[設定變更] 最大同時下載數: {value}")
         self.show_toast(f"最大同時下載數: {value}")
+        if hasattr(self, 'save_config'): self.save_config()
             
     def browse_cookie_file(self):
         p = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
@@ -1268,6 +1387,110 @@ class AppLayoutMixin:
             self.entry_cookie_path.delete(0, "end")
             self.entry_cookie_path.insert(0, p)
 
+    # --- [New] Changelog Viewer ---
+    def show_changelog(self):
+        """讀取並顯示 CHANGELOG.md (最近 1 次更新)"""
+        try:
+            import sys
+            import re
+            import os
+            import tkinter as tk 
+            import textwrap # For dedenting indented string
+            
+            # --- 內嵌日誌內容 (免打包) ---
+            # build_onedir.py 會自動尋找並更新下列區塊
+            # <CHANGELOG_INJECTION_START>
+            CHANGELOG_TEXT = """
+            # 更新日誌
+            
+            ## [2025.12.28] 
+            
+            ### 新增功能
+            - **設定自動儲存**: 現在程式會自動記憶您的偏好設定（包含：下載路徑、Cookie 模式、User Agent、最大同時下載數），下次開啟時無需重新設定。
+            - **Proxy 設定優化**: 新增「記住設定」開關，讓您可以選擇是否要儲存 Proxy 伺服器資訊。
+            
+            ### 優化與修正
+            - **版本檢查機制**: 優化了新版本的檢查邏輯，避免在特定情況下出現錯誤的更新提示。
+            
+            """
+            # <CHANGELOG_INJECTION_END>
+            # ---------------------------
+
+            content = textwrap.dedent(CHANGELOG_TEXT).strip()
+            
+            # 2. 簡易解析：只取最新版本
+            parts = re.split(r'(^## \[)', content, flags=re.MULTILINE)
+            display_text = parts[0] 
+            count = 0
+            for i in range(1, len(parts), 2):
+                if count >= 1: break
+                if i+1 < len(parts):
+                    display_text += parts[i] + parts[i+1]
+                    count += 1
+            content = display_text.strip()
+            
+            # 3. 顯示視窗
+            top = ctk.CTkToplevel(self)
+            top.title("本次更新內容")
+            top.geometry("500x350")
+            
+            # Center window
+            x = self.winfo_x() + (self.winfo_width() // 2) - 250
+            y = self.winfo_y() + (self.winfo_height() // 2) - 175
+            top.geometry(f"+{x}+{y}")
+            top.attributes("-topmost", True)
+            
+            # --- [New] Markdown Formatter ---
+            def format_markdown(text):
+                lines = text.split('\n')
+                formatted = []
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        formatted.append("")
+                        continue
+                    
+                    # 處理標題 (## V1.0.0) -> [V1.0.0]
+                    if line.startswith('## '):
+                        # 擷取版本號 (移除 ## 與前後空白)
+                        ver_txt = line.replace('## ', '').strip()
+                        formatted.append(f"\n━━━ {ver_txt} ━━━")
+                    
+                    # 處理小標題 (### Added) -> Added
+                    elif line.startswith('### '):
+                        sub_cat = line.replace('### ', '').strip()
+                        formatted.append(f"\n[{sub_cat}]")
+                        
+                    # 處理列表 (- Item) -> • Item
+                    elif line.startswith('- '):
+                        item = line[2:] 
+                        # 移除粗體記號
+                        item = item.replace('**', '') 
+                        formatted.append(f"  • {item}")
+                    
+                    # 其他文字
+                    else:
+                        # 移除 # 
+                        clean_line = line.lstrip('#').strip()
+                        if clean_line: formatted.append(clean_line)
+                
+                return "\n".join(formatted)
+            # --------------------------------
+            
+            pretty_content = format_markdown(content)
+
+            textbox = ctk.CTkTextbox(top, font=("Microsoft JhengHei UI", 14), wrap="word", height=400)
+            textbox.pack(fill="both", expand=True, padx=15, pady=15)
+            
+            # 設定 Tag 樣式不一定對所有字體生效，主要靠排版
+            textbox.insert("1.0", pretty_content)
+            textbox.configure(state="disabled") 
+            
+        except Exception as e:
+            if hasattr(self, 'show_toast'):
+                self.show_toast("錯誤", f"無法讀取日誌: {e}")
+            else:
+                tk.messagebox.showerror("Error", str(e))
 
 
     def setup_log_ui(self):
@@ -1587,7 +1810,19 @@ class AppLayoutMixin:
             height=40, width=200, corner_radius=20,
             command=lambda: threading.Thread(target=self.check_app_update, daemon=True).start()
         )
-        self.btn_update_app.grid(row=1, column=0, padx=10, pady=10)
+        self.btn_update_app.grid(row=0, column=1, padx=10, pady=10)
+
+        # [New] 查看更新日誌按鈕
+        self.btn_changelog = ctk.CTkButton(
+            btn_frame, 
+            text="📃 查看更新日誌", 
+            font=("Microsoft JhengHei UI", 13), 
+            fg_color="transparent", border_width=1, text_color=("gray40", "gray60"),
+            hover_color=("gray90", "gray30"),
+            height=32, width=150, corner_radius=16,
+            command=self.show_changelog
+        )
+        self.btn_changelog.grid(row=1, column=0, columnspan=2, pady=(0, 10))
 
         # (C) 連結區 (小型按鈕)
         link_frame = ctk.CTkFrame(info_card, fg_color="transparent")
@@ -1608,6 +1843,14 @@ class AppLayoutMixin:
                                 height=30, width=120, command=open_issues)
         btn_bug.pack(side="left", padx=5)
 
+        # (D) 版權資訊 (卡片內底部)
+        copyright_label = ctk.CTkLabel(
+            info_card,
+            text="Copyright © 2025 nununuuuu.",
+            font=("Microsoft JhengHei UI", 10), text_color="gray60"
+        )
+        copyright_label.pack(side="bottom", pady=(10, 20))
+
 
         # --- 2. 底部版權區 (Footer) ---
         footer_frame = ctk.CTkFrame(self.tab_about, fg_color="transparent")
@@ -1623,7 +1866,7 @@ class AppLayoutMixin:
 
         disclaimer = (
             "免責聲明：本軟體僅供技術研究與個人學習使用，請勿用於商業用途。\n"
-            "Copyright © 2025 nununuuuu. Powered by yt-dlp & CustomTkinter."
+            "因使用本項目而產生的任何後果均由使用者個人承擔，與開發者無關，概不負責。"
         )
         ctk.CTkLabel(footer_frame, text=disclaimer, text_color="gray", font=("Microsoft JhengHei UI", 10), justify="center").pack()
 

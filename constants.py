@@ -17,7 +17,8 @@ try:
         # Assuming constants.py is in root
         base_path = os.path.dirname(os.path.abspath(__file__))
     
-    lang_file = os.path.join(base_path, 'languages.json')
+    # [Modified] Look in data directory
+    lang_file = os.path.join(base_path, 'data', 'languages.json')
     
     if os.path.exists(lang_file):
         with open(lang_file, 'r', encoding='utf-8') as f:

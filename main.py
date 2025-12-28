@@ -190,8 +190,111 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # Global Click Binding to dismiss focus
         self.bind("<Button-1>", self._bg_click_handler)
         
+        # --- Config & Data Management ---
+        # [New] Use 'data' directory for config and languages
+        self.data_dir = os.path.join(app_path, "data")
+        if not os.path.exists(self.data_dir):
+            try:
+                os.makedirs(self.data_dir)
+            except Exception as e:
+                print(f"Error creating data dir: {e}")
+        
+        self.config_file = os.path.join(self.data_dir, "config.json")
+        self.load_config()
+        
         # Check Core Library (Delayed to allow UI to show)
         self.after(1000, self.check_core_library)
+
+    def load_config(self):
+        """讀取設定檔並應用到 UI"""
+        default_config = {
+            "save_path": "",
+            "cookie_mode": "none",
+            "user_agent": "",
+            "max_concurrent": 1,
+            "remember_proxy": False,  
+            "proxy": ""               
+        }
+        
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                    default_config.update(saved)
+            except: pass
+
+        # 1. Path
+        if default_config["save_path"] and os.path.exists(default_config["save_path"]):
+            self.entry_path.delete(0, "end")
+            self.entry_path.insert(0, default_config["save_path"])
+        
+        # 2. Cookie Mode
+        mode = default_config["cookie_mode"]
+        if hasattr(self, 'var_cookie_mode'):
+            self.var_cookie_mode.set(mode)
+            if hasattr(self, 'on_cookie_mode_change'): 
+                self.on_cookie_mode_change()
+                self.after(100, lambda: self._update_browser_btn_visuals(mode))
+
+        # 3. User Agent
+        ua = default_config["user_agent"]
+        if ua and hasattr(self, 'entry_ua'):
+            self.entry_ua.delete(0, "end")
+            self.entry_ua.insert(0, ua)
+            
+        # 4. Concurrent
+        conc = default_config["max_concurrent"]
+        if hasattr(self, 'combo_concurrent'):
+            self.combo_concurrent.set(str(conc))
+            self.max_concurrent_downloads = int(conc)
+            
+        # 5. Proxy [New]
+        if hasattr(self, 'var_remember_proxy'):
+            should_remember = default_config["remember_proxy"]
+            self.var_remember_proxy.set(should_remember)
+            
+            if should_remember and default_config["proxy"]:
+                self.entry_proxy.delete(0, "end")
+                self.entry_proxy.insert(0, default_config["proxy"])
+
+    def save_config(self):
+        """儲存當前設定到檔案"""
+        try:
+            # Proxy Logic
+            proxy_val = ""
+            remember_proxy = False
+            if hasattr(self, 'var_remember_proxy'):
+                remember_proxy = self.var_remember_proxy.get()
+                if remember_proxy:
+                    proxy_val = self.entry_proxy.get().strip()
+            
+            data = {
+                "save_path": self.entry_path.get().strip(),
+                "cookie_mode": self.var_cookie_mode.get(),
+                "user_agent": self.entry_ua.get().strip(),
+                "max_concurrent": self.max_concurrent_downloads,
+                "remember_proxy": remember_proxy,
+                "proxy": proxy_val
+            }
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Save Config Error: {e}")
+
+    def _update_browser_btn_visuals(self, current_mode):
+        """Helper to update browser buttons (copied logic from layout)"""
+        if not hasattr(self, 'browser_btns'): return
+        try:
+            for val, btn in self.browser_btns.items():
+                if val == current_mode:
+                    btn.configure(fg_color="#1F6AA5", text_color="white", border_width=0)
+                else:
+                    btn.configure(fg_color=("white", "#333333"), text_color=("gray20", "gray80"), border_width=1)
+        except: pass
+
+    # Hook into update events to auto-save
+    def on_path_change(self, event=None):
+        self.save_config()
         
     def _bg_click_handler(self, event):
         """點擊空白處取消輸入框焦點"""
@@ -204,10 +307,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             if "Entry" in cls or "Text" in cls:
                 return
                 
-            # 如果點擊的是 CTkEntry 的內部部件，可能需要檢查父層
-            # 但通常點擊 Entry 內部會直接觸發 Entry
-            
-            # 讓主視窗獲得焦點 (即取消元件焦點)
             self.focus()
         except: pass
 
