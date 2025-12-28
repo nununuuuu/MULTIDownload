@@ -257,6 +257,11 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 self.entry_proxy.delete(0, "end")
                 self.entry_proxy.insert(0, default_config["proxy"])
 
+        # 6. SponsorBlock
+        if hasattr(self, 'var_sponsorblock'):
+            enable_sb = default_config.get("sponsorblock", False)
+            self.var_sponsorblock.set(enable_sb)
+
     def save_config(self):
         """儲存當前設定到檔案"""
         try:
@@ -274,7 +279,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 "user_agent": self.entry_ua.get().strip(),
                 "max_concurrent": self.max_concurrent_downloads,
                 "remember_proxy": remember_proxy,
-                "proxy": proxy_val
+                "proxy": proxy_val,
+                "sponsorblock": self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False
             }
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -438,6 +444,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             'embed_thumbnail': self.var_embed_thumb.get() if hasattr(self, 'var_embed_thumb') else True,
             'embed_subs': self.var_embed_subs.get() if hasattr(self, 'var_embed_subs') else True,
             'add_metadata': self.var_metadata.get() if hasattr(self, 'var_metadata') else True,
+            'sponsorblock': self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False, 
         }
         
         return config

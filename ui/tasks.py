@@ -264,7 +264,32 @@ class TaskLayoutMixin:
         self.lbl_active_empty.place_forget()
         self.active_task_widgets[task_id] = {'frame': row}
 
-        # Main Info (Left)
+        self.active_task_widgets[task_id] = {'frame': row}
+
+        # 1. Right Side: Cancel Button (Fixed)
+        btn_cancel = ctk.CTkButton(row, text="✕", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#440000"),
+                                   font=("Arial", 16), corner_radius=18,
+                                   command=lambda: self.cancel_task(task_id))
+        btn_cancel.pack(side="right", padx=(5, 10))
+
+        # 2. Right Side: Status & Speed (Fixed width to prevent jitter, but packed before main info)
+        status_frame = ctk.CTkFrame(row, fg_color="transparent")
+        status_frame.pack(side="right", padx=5, pady=12)
+        
+        # Status Text
+        # Removed fixed width to allow natural sizing, or use a smaller min-width logic if needed. 
+        # For now, natural size prevents empty space issues, but might cause slight jitter. 
+        # To fix jitter without fixed width, we can rely on right-alignment.
+        lbl_stat = ctk.CTkLabel(status_frame, text=initial_status, font=("Microsoft JhengHei UI", 14, "bold"), text_color="#24A36C", anchor="e")
+        lbl_stat.pack(anchor="e")
+        self.active_task_widgets[task_id]['status_label'] = lbl_stat
+        
+        # Speed & ETA
+        meta_lbl = ctk.CTkLabel(status_frame, text="-- MB/s  |  --:--", font=("Consolas", 11), text_color=("gray50", "gray70"), anchor="e")
+        meta_lbl.pack(anchor="e", pady=(2, 0))
+        self.active_task_widgets[task_id]['meta_label'] = meta_lbl
+
+        # 3. Main Info (Left - Expands to fill remaining space)
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
         info_frame.pack(side="left", fill="both", expand=True, padx=15, pady=12)
         
@@ -288,26 +313,6 @@ class TaskLayoutMixin:
         prog.set(0)
         prog.pack(fill="x", pady=(8, 0))
         self.active_task_widgets[task_id]['progress_bar'] = prog
-
-        # Cancel Button (Rightmost)
-        btn_cancel = ctk.CTkButton(row, text="✕", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#440000"),
-                                   font=("Arial", 16), corner_radius=18,
-                                   command=lambda: self.cancel_task(task_id))
-        btn_cancel.pack(side="right", padx=(5, 10))
-
-        # Right Side: Status, Speed
-        status_frame = ctk.CTkFrame(row, fg_color="transparent")
-        status_frame.pack(side="right", padx=5, pady=12)
-        
-        # Status Text (Fixed width to prevent resizing jitter)
-        lbl_stat = ctk.CTkLabel(status_frame, text=initial_status, font=("Microsoft JhengHei UI", 14, "bold"), text_color="#24A36C", anchor="e", width=180)
-        lbl_stat.pack(anchor="e")
-        self.active_task_widgets[task_id]['status_label'] = lbl_stat
-        
-        # Speed & ETA
-        meta_lbl = ctk.CTkLabel(status_frame, text="-- MB/s  |  --:--", font=("Consolas", 11), text_color=("gray50", "gray70"), anchor="e", width=180)
-        meta_lbl.pack(anchor="e", pady=(2, 0))
-        self.active_task_widgets[task_id]['meta_label'] = meta_lbl
         
         # Double-click to Pause/Resume
         def on_double_click(event):

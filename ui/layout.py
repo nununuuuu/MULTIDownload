@@ -521,11 +521,9 @@ class AppLayoutMixin:
                                                  variable=self.var_video_res, width=200, **opt_style)
         self.combo_video_res.pack(fill="x", pady=(0, 15))
         
-        bg_legacy = ctk.CTkFrame(video_content, fg_color=("gray90", "gray25"), corner_radius=8)
-        bg_legacy.pack(fill="x", pady=5)
-        self.chk_legacy = ctk.CTkSwitch(bg_legacy, text="使用 H.264 (高相容)", variable=self.var_video_legacy, 
-                                        font=("Microsoft JhengHei UI", 13), progress_color="#1F6AA5", command=self.update_dynamic_hint)
-        self.chk_legacy.pack(padx=10, pady=10, anchor="w")
+        self.chk_legacy = ctk.CTkSwitch(video_content, text="使用 H.264 編碼 (高相容性)", variable=self.var_video_legacy, 
+                                        font=("Microsoft JhengHei UI", 13), progress_color="#2CC985", button_hover_color="#20A068", command=self.update_dynamic_hint)
+        self.chk_legacy.pack(anchor="w", pady=(5, 15))
         CTkToolTip(self.chk_legacy, "若您的播放裝置較舊，請開啟此選項。\n注意：最高畫質通常限制為 1080p。")
 
         # --- Card 2: Audio Settings ---
@@ -552,7 +550,7 @@ class AppLayoutMixin:
         def create_switch(parent, text, var, r, c, tooltip=None):
             # 使用 CTkSwitch 取代 CheckBox
             sw = ctk.CTkSwitch(parent, text=text, variable=var, font=("Microsoft JhengHei UI", 13), 
-                               progress_color="#1F6AA5", button_hover_color="#144870")
+                               progress_color="#2CC985", button_hover_color="#20A068")
             sw.grid(row=r, column=c, sticky="w", padx=20, pady=12)
             if tooltip: CTkToolTip(sw, tooltip)
             return sw
@@ -560,6 +558,10 @@ class AppLayoutMixin:
         create_switch(post_content, "內嵌影片縮圖 (Thumbnail)", self.var_embed_thumb, 0, 0, "將 YouTube 封面圖寫入影片檔案中")
         create_switch(post_content, "內嵌字幕檔案 (Embed Subs)", self.var_embed_subs, 0, 1, "將下載的字幕檔直接封裝進影片 (Softsubs)")
         create_switch(post_content, "寫入中繼資料 (Metadata)", self.var_metadata, 1, 0, "寫入標題、作者、日期等詳細資訊")
+        
+        # [New] SponsorBlock
+        if not hasattr(self, 'var_sponsorblock'): self.var_sponsorblock = ctk.BooleanVar(value=False)
+        create_switch(post_content, "啟用 SponsorBlock (去除廣告)", self.var_sponsorblock, 1, 1, "自動移除影片中的業配、片頭片尾與廣告片段 (需重新編碼，下載速度較慢)")
 
         self.on_format_change(None)
 
@@ -1323,7 +1325,7 @@ class AppLayoutMixin:
         self.chk_remember_proxy = ctk.CTkSwitch(
             proxy_header, text="記住設定", variable=self.var_remember_proxy, 
             font=self.font_small, width=80, height=20,
-            command=on_proxy_toggle, progress_color="#1F6AA5"
+            command=on_proxy_toggle, progress_color="#2CC985", button_hover_color="#20A068"
         )
         self.chk_remember_proxy.pack(side="right")
 

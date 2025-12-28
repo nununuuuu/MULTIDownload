@@ -201,8 +201,10 @@ class YtDlpCore:
         if config.get('embed_thumbnail'): 
             opts['writethumbnail'] = True
             opts['embedthumbnail'] = True
-        if config.get('embed_subs'): opts['embedsubtitles'] = True
-        if config.get('add_metadata'): opts['addmetadata'] = True
+        if config.get('sponsorblock'): 
+            opts['sponsorblock_remove'] = ['all']
+            opts['force_keyframes_at_cuts'] = True # 強制在切割點重新編碼，確保剪接精確
+            # opts['sponsorblock_api'] = 'https://sponsor.ajay.app' # 預設 API (通常不用改)
 
 
 
