@@ -36,6 +36,8 @@ ui/changelog_gen.py
 build_onedir.py
 build_onefile.py
 
+
+
 # --- OS Specific ---
 .DS_Store
 Thumbs.db

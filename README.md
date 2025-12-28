@@ -48,36 +48,6 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
 3. 雙擊 `MULTIDownload.exe` 即可使用。
 4. **首次執行**：若程式提示缺少核心，請點擊「確定」，程式將自動為您下載安裝。
 
-### 開發者 (Python 原始碼)
-若您想自行修改程式碼或透過 Python 執行：
-
-1. **安裝依賴套件**：
-   ```bash
-   pip install -r requirements.txt
-   # 或手動安裝: pip install requests yt-dlp customtkinter pillow browser-cookie3
-   ```
-
-2. **準備 FFmpeg**：
-   需安裝 FFmpeg 並設定環境變數，或將 `ffmpeg.exe` 與 `ffprobe.exe` 放置於專案根目錄。
-
-3. **啟動程式**：
-   ```bash
-   python main.py
-   ```
-
-4. **打包成執行檔**：
-   - **Onedir 模式 (推薦，支援熱更新)**:
-     ```bash
-     python build_onedir.py
-     ```
-     產物位於 `dist/MULTIDownload` 資料夾。
-     *(注意：此腳本會自動抓取 `CHANGELOG.md` 內容並注入至 `ui/layout.py`，實現免打包日誌檔案的功能)*
-
-   - **Onefile 模式 (單一 EXE)**:
-     ```bash
-     python build_onefile.py
-     ```
-
 **專案結構說明：**
 - `main.py`: 程式入口與核心邏輯，包含熱更新與核心安裝模組。
 - `ui/`: 介面模組
@@ -86,7 +56,6 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
   - `tooltip.py`: 懸浮提示元件。
 - `core.py`: yt-dlp 下載引擎封裝。
 - `constants.py`: 全域常數與語言代碼表。
-- `build_onedir.py`: PyInstaller 打包腳本。
 
 ---
 
