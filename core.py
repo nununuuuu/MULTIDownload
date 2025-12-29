@@ -2,6 +2,7 @@ import threading
 import os
 import re
 import time
+import sys
 
 class YtDlpCore:
     def __init__(self):
@@ -90,6 +91,46 @@ class YtDlpCore:
         except Exception as e:
             return {'error': str(e)}
 
+    def get_available_hw_accel(self):
+        """偵測可用的硬體加速器 (NVIDIA, Intel, AMD)"""
+        accel_types = []
+        try:
+            # 尋找 ffmpeg
+            ffmpeg_path = "ffmpeg"
+            import shutil
+            if not shutil.which("ffmpeg"):
+                # 嘗試本地目錄
+                try: # Handle sys.argv[0] specific access
+                    base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+                    local_ffmpeg = os.path.join(base_dir, "ffmpeg.exe") 
+                    if os.path.exists(local_ffmpeg): ffmpeg_path = local_ffmpeg
+                    else: 
+                        local_ffmpeg_bin = os.path.join(base_dir, "bin", "ffmpeg.exe")
+                        if os.path.exists(local_ffmpeg_bin): ffmpeg_path = local_ffmpeg_bin
+                except: pass
+            
+            # 執行偵測
+            import subprocess
+            cmd = [ffmpeg_path, "-hide_banner", "-encoders"]
+            # Windows 隱藏視窗
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo, encoding='utf-8', errors='ignore')
+            output = result.stdout
+            
+            if "nvenc" in output: accel_types.append("NVIDIA")
+            if "qsv" in output: accel_types.append("Intel")
+            if "amf" in output: accel_types.append("AMD")
+            if "videotoolbox" in output: accel_types.append("Apple")
+            
+        except Exception:
+            pass # 偵測失敗視為無
+            
+        return accel_types
+
     def stop_download(self):
         self.stop_signal = True
 
@@ -148,7 +189,7 @@ class YtDlpCore:
         
         elif d['status'] == 'finished':
             if progress_callback: progress_callback(0.99, "合併轉檔中 (修復音訊)...") 
-            if log_callback: log_callback(f"檔案下載完畢，正在執行 FFmpeg 處理...")
+            # Log removed to prevent duplicate messages. Logic moved to MyLogger.debug to catch [Merger] event.
 
     def _run_download(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
         try:
@@ -159,15 +200,69 @@ class YtDlpCore:
             return
 
         # 鎖定程式所在目錄尋找 ffmpeg (優先順序: 當前目錄 -> bin 子目錄 -> 系統環境變數)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # 鎖定程式所在目錄尋找 ffmpeg
+        if getattr(sys, 'frozen', False):
+            # 打包後，以執行檔所在目錄為準
+            script_dir = os.path.dirname(sys.executable)
+        else:
+            # 開發模式
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+
         ffmpeg_loc = None
         
-        # 1. Check root dir
-        if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'ffmpeg')):
+        # 優先檢查 bin/ 子目錄 (較為整潔的配置)
+        if os.path.exists(os.path.join(script_dir, 'bin', 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'bin', 'ffmpeg')):
+            ffmpeg_loc = os.path.join(script_dir, 'bin')
+        # 其次檢查根目錄
+        elif os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'ffmpeg')):
             ffmpeg_loc = script_dir
-        # 2. Check bin/ subdir
-        elif os.path.exists(os.path.join(script_dir, 'bin', 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'bin', 'ffmpeg')):
-             ffmpeg_loc = os.path.join(script_dir, 'bin')
+            
+        # --- [NEW] FFmpeg 狀態診斷與回報 ---
+        import subprocess
+        check_path = None
+        if ffmpeg_loc:
+            check_path = os.path.join(ffmpeg_loc, 'ffmpeg.exe')
+            if not os.path.exists(check_path): check_path = os.path.join(ffmpeg_loc, 'ffmpeg')
+        else:
+            check_path = "ffmpeg" # 嘗試系統路徑
+
+        try:
+            # 嘗試執行 -version 確保可用
+            cmd = [check_path, "-version"]
+            # Windows 下隱藏視窗
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, startupinfo=startupinfo)
+            
+            # Determine source info
+            source_desc = "系統環境變數"
+            path_desc = "系統預設"
+            
+            if ffmpeg_loc:
+                if ffmpeg_loc.endswith("bin"): source_desc = "本地 (bin 子目錄)"
+                else: source_desc = "本地 (程式根目錄)"
+                path_desc = ffmpeg_loc
+            else:
+                import shutil
+                sys_p = shutil.which("ffmpeg")
+                if sys_p: path_desc = sys_p
+
+            if log_callback: 
+                log_callback(f"[系統] 偵測到 FFmpeg:來源: {source_desc} | 路徑: {path_desc}")
+                
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            if ffmpeg_loc:
+                if log_callback: log_callback(f"[嚴重錯誤] 發現 FFmpeg 但無法執行！請檢查檔案是否損毀或被防毒攔截。\n路徑: {check_path}")
+            else:
+                if log_callback: log_callback(f"[嚴重警告] 未偵測到 FFmpeg！\n高畫質下載 (1080p+) 需要合併影像與聲音，將導致失敗。\n請確認已將 ffmpeg.exe 放入程式資料夾。")
+            
+            # 若本地失效但系統路徑也沒找到，這裡不強制 return，讓 yt-dlp 自己去報錯，或許可提供更詳細資訊
+        except Exception as e:
+            if log_callback: log_callback(f"[系統錯誤] 檢查 FFmpeg 時發生例外: {e}")
+        # ----------------------------------
         
         # 3. Else: remains None (yt-dlp will use system PATH)
         
@@ -175,7 +270,9 @@ class YtDlpCore:
         if not config.get('save_path'): config['save_path'] = os.getcwd()
 
         class MyLogger:
-            def debug(self, msg): pass
+            def debug(self, msg):
+                if "[Merger]" in msg or "Merging formats" in msg:
+                     if log_callback: log_callback("分段下載完畢 (Video/Audio)，準備合併...")
             def info(self, msg): pass
             def warning(self, msg):
                 if log_callback: log_callback(f"[警告] {self._clean(msg)}")
@@ -205,6 +302,22 @@ class YtDlpCore:
             opts['sponsorblock_remove'] = ['all']
             opts['force_keyframes_at_cuts'] = True # 強制在切割點重新編碼，確保剪接精確
             # opts['sponsorblock_api'] = 'https://sponsor.ajay.app' # 預設 API (通常不用改)
+
+        # Hardware Acceleration
+        hw_mode = config.get('hardware_accel', '')
+        pp_args = []
+        if "NVIDIA" in hw_mode: pp_args = ['-hwaccel', 'cuda']
+        elif "Intel" in hw_mode: pp_args = ['-hwaccel', 'auto'] # QSV setup can be complex, auto is safer
+        elif "AMD" in hw_mode: pp_args = ['-hwaccel', 'auto'] 
+        elif "Apple" in hw_mode: pp_args = ['-hwaccel', 'videotoolbox']
+        elif "自動" in hw_mode: pp_args = ['-hwaccel', 'auto']
+        
+        if pp_args:
+             if log_callback: log_callback(f"[系統] 已啟用硬體加速: {hw_mode}")
+             opts['postprocessor_args'] = {
+                 'Merger': pp_args,
+                 'VideoConvertor': pp_args
+             }
 
 
 

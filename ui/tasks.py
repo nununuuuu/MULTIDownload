@@ -272,9 +272,11 @@ class TaskLayoutMixin:
                                    command=lambda: self.cancel_task(task_id))
         btn_cancel.pack(side="right", padx=(5, 10))
 
-        # 2. Right Side: Status & Speed (Fixed width to prevent jitter, but packed before main info)
-        status_frame = ctk.CTkFrame(row, fg_color="transparent")
-        status_frame.pack(side="right", padx=5, pady=12)
+        # 2. Right Side: Status & Speed (Fixed width container to prevent jitter)
+        # 固定寬度容器，避免因為文字長度變化導致左邊的進度條伸縮
+        status_frame = ctk.CTkFrame(row, fg_color="transparent", width=160, height=50) 
+        status_frame.pack_propagate(False)
+        status_frame.pack(side="right", padx=5, pady=6)
         
         # Status Text
         # Removed fixed width to allow natural sizing, or use a smaller min-width logic if needed. 
@@ -347,19 +349,24 @@ class TaskLayoutMixin:
     def update_task_widget(self, task_id, percent, status_text=None, speed=None, eta=None):
         if task_id not in self.active_task_widgets: return
         
-        # Throttling is handled by main.py content update loop to avoid race conditions
-        # (main.py updates the timestamp before calling us)
-
         widgets = self.active_task_widgets[task_id]
         
-        if percent >= 0:
-            widgets['progress_bar'].set(percent)
-        
-        if status_text:
-            widgets['status_label'].configure(text=status_text)
+        try:
+            # Safety check: ensure widget still exists
+            if not widgets['frame'].winfo_exists():
+                return
+                
+            if percent >= 0:
+                widgets['progress_bar'].set(percent)
             
-        if speed and eta:
-            widgets['meta_label'].configure(text=f"{speed} | {eta}")
+            if status_text:
+                widgets['status_label'].configure(text=status_text)
+                
+            if speed and eta:
+                widgets['meta_label'].configure(text=f"{speed} | {eta}")
+        except Exception:
+            # Ignore errors if widget is destroyed during update
+            pass
 
 
     def clear_history(self):

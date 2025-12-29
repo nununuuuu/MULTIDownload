@@ -44,10 +44,10 @@ class CTkToolTip(ctk.CTkToplevel):
         self._tip_window.attributes('-topmost', True)
 
         label = ctk.CTkLabel(self._tip_window, text=self.text, corner_radius=6, 
-                             fg_color=("#1A1A1A", "#F8F9FA"), 
-                             text_color=("#FFFFFF", "#1A1A1A"), 
+                             fg_color=("#2B2B2B", "#F2F2F2"), 
+                             text_color=("#E0E0E0", "#202020"), 
                              padx=10, pady=5,
-                             font=("Microsoft YaHei UI", 14, "bold"))
+                             font=("Microsoft JhengHei UI", 12))
         label.pack()
 
     def _hide(self, event=None):

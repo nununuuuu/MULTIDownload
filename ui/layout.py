@@ -151,6 +151,38 @@ class AppLayoutMixin:
         self.nav_btns[key] = btn
         CTkToolTip(btn, tooltip_text)
 
+    def show_nav_badge(self, key):
+        """在指定的導航按鈕上顯示紅點提醒"""
+        if key not in self.nav_btns: return
+        
+        # 避免重複添加
+        if hasattr(self, f"badge_{key}"): return
+
+        btn = self.nav_btns[key]
+        
+        # 建立紅點
+        badge = ctk.CTkFrame(self.sidebar_frame, width=12, height=12, corner_radius=6, fg_color="#FF3B30", border_width=2, border_color="#2b2b2b")
+        
+        # 使用 place 相對定位於按鈕右上角
+        # in_ 參數讓它相對於 btn 定位
+        badge.place(in_=btn, relx=0.75, rely=0.2, anchor="center")
+        
+        setattr(self, f"badge_{key}", badge)
+
+    def show_widget_badge(self, widget, badge_id):
+        """在任意 Widget 上顯示紅點"""
+        if not widget: return
+        if hasattr(self, f"badge_widget_{badge_id}"): return
+
+        try:
+            # 建立在 widget 的父容器上，避免被 widget 裁切
+            badge = ctk.CTkFrame(widget.master, width=12, height=12, corner_radius=6, fg_color="#FF3B30", border_width=2, border_color="#2b2b2b")
+            # 定位於右上角
+            badge.place(in_=widget, relx=0.98, rely=0.02, anchor="center")
+            
+            setattr(self, f"badge_widget_{badge_id}", badge)
+        except Exception: pass
+
     def select_frame(self, name):
         # Hide all frames
         for frame in self.frames.values():
@@ -325,6 +357,19 @@ class AppLayoutMixin:
 
 
     def setup_basic_ui(self):
+        # --- Hardware Acceleration Switch (Top-Left) ---
+        if not hasattr(self, 'var_hardware_accel'): self.var_hardware_accel = ctk.BooleanVar(value=False)
+        
+        hw_frame = ctk.CTkFrame(self.tab_basic, fg_color="transparent")
+        hw_frame.grid(row=0, column=0, sticky="nw", padx=20, pady=20)
+        
+        self.switch_hw = ctk.CTkSwitch(hw_frame, text="硬體加速: 偵測中...", variable=self.var_hardware_accel,
+                                       font=("Microsoft JhengHei UI", 12, "bold"), text_color="gray60",
+                                       progress_color="#2CC985", button_hover_color="#20A068",
+                                       state="disabled")
+        self.switch_hw.pack(anchor="w")
+        CTkToolTip(self.switch_hw, "使用顯示卡 GPU 加速合併與轉檔過程。\n自動偵測: NVIDIA, Intel, AMD, Apple (Mac)。")
+
         # --- Absolute Vertical Centering Layout ---
         # Grid: Row 0 (Spacer), Row 1 (Content), Row 2 (Spacer)
         self.tab_basic.grid_rowconfigure(0, weight=1)
@@ -562,6 +607,8 @@ class AppLayoutMixin:
         # [New] SponsorBlock
         if not hasattr(self, 'var_sponsorblock'): self.var_sponsorblock = ctk.BooleanVar(value=False)
         create_switch(post_content, "啟用 SponsorBlock (去除廣告)", self.var_sponsorblock, 1, 1, "自動移除影片中的業配、片頭片尾與廣告片段 (需重新編碼，下載速度較慢)")
+
+
 
         self.on_format_change(None)
 

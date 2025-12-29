@@ -98,17 +98,36 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.title("MULTIDownload")
         self.geometry("900x780") 
         
+        # 設定應用程式圖示 (Runtime Icon)
         try:
-            if hasattr(sys, '_MEIPASS'):
-                 # PyInstaller 打包後的暫存路徑
-                 icon_path = os.path.join(sys._MEIPASS, "1.ico")
-            else:
-                 # 開發環境路徑
-                 icon_path = r"C:\mypython\MULTIDownload\icon\1.ico"
+            icon_candidates = []
             
-            if os.path.exists(icon_path):
-                 self.iconbitmap(icon_path)
-        except Exception: pass 
+            # 1. 打包後的內部資源 (_MEIPASS)
+            if hasattr(sys, '_MEIPASS'):
+                icon_candidates.append(os.path.join(sys._MEIPASS, "icon", "1.ico"))
+                icon_candidates.append(os.path.join(sys._MEIPASS, "1.ico"))
+            
+            # 2. 執行檔所在目錄 (OneDir 模式)
+            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            icon_candidates.append(os.path.join(exe_dir, "1.ico"))
+            icon_candidates.append(os.path.join(exe_dir, "icon", "1.ico"))
+            
+            # 3. 開發環境絕對路徑
+            icon_candidates.append(r"C:\mypython\MULTIDownload\icon\1.ico")
+            
+            final_icon_path = None
+            for p in icon_candidates:
+                if os.path.exists(p):
+                    final_icon_path = p
+                    break
+                    
+            if final_icon_path:
+                self.iconbitmap(final_icon_path)
+            else:
+                print("Warning: Icon file not found.")
+                
+        except Exception as e: 
+            print(f"Set Icon Error: {e}") 
         
         ctk.set_appearance_mode(DEFAULT_APPEARANCE_MODE)
         
@@ -205,6 +224,32 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # Check Core Library (Delayed to allow UI to show)
         self.after(1000, self.check_core_library)
 
+        # 硬體加速偵測
+        self.detected_gpu = None
+        self.check_hardware_acceleration()
+
+        # 啟動自動更新檢查 (延遲 2 秒，避免影響啟動速度)
+        self.after(2000, lambda: self.check_app_update(silent=True))
+
+    def check_hardware_acceleration(self):
+        def _task():
+             # 使用 core 的靜態能力偵測
+             accels = self.core.get_available_hw_accel()
+             self.after(0, lambda: self._update_hw_ui(accels))
+        threading.Thread(target=_task, daemon=True).start()
+
+    def _update_hw_ui(self, accels):
+        if not hasattr(self, 'switch_hw'): return
+        
+        if accels:
+             best = accels[0]
+             self.detected_gpu = best
+             self.switch_hw.configure(state="normal", text=f"啟用硬體加速 ({best})")
+        else:
+             self.detected_gpu = None
+             self.switch_hw.configure(state="disabled", text="未偵測到相容 GPU (硬體加速不可用)")
+             self.var_hardware_accel.set(False)
+
     def load_config(self):
         """讀取設定檔並應用到 UI"""
         default_config = {
@@ -259,8 +304,12 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         # 6. SponsorBlock
         if hasattr(self, 'var_sponsorblock'):
-            enable_sb = default_config.get("sponsorblock", False)
-            self.var_sponsorblock.set(enable_sb)
+            self.var_sponsorblock.set(default_config.get("sponsorblock", False))
+
+        # 7. Hardware Accel
+        if hasattr(self, 'var_hardware_accel'):
+             hw_val = default_config.get("hardware_accel", "不使用 (CPU)")
+             self.var_hardware_accel.set(hw_val != "不使用 (CPU)")
 
     def save_config(self):
         """儲存當前設定到檔案"""
@@ -445,6 +494,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             'embed_subs': self.var_embed_subs.get() if hasattr(self, 'var_embed_subs') else True,
             'add_metadata': self.var_metadata.get() if hasattr(self, 'var_metadata') else True,
             'sponsorblock': self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False, 
+            'hardware_accel': self.detected_gpu if (hasattr(self, 'var_hardware_accel') and self.var_hardware_accel.get() and self.detected_gpu) else "不使用 (CPU)",
         }
         
         return config
@@ -791,6 +841,11 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self._update_task_buttons(task_id, 'paused')
             return
 
+        # 錯誤訊息增強提示
+        if not success and current_status != 'cancelled':
+            if "Permission denied" in msg or "WinError 32" in msg or "unable to open" in msg:
+                msg += " (提示: 目標檔案可能已存在或正被佔用，請關閉相關程式)"
+
         status_prefix = "成功" if success else "失敗"
         if current_status == 'cancelled': status_prefix = "已取消"
         
@@ -1021,7 +1076,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.after(0, lambda: self.show_toast("安裝失敗", err_msg, icon_color="red"))
             self.after(0, lambda: tk.messagebox.showerror("錯誤", f"核心安裝失敗:\n{err_msg}"))
 
-    def check_app_update(self):
+    def check_app_update(self, silent=False):
         """檢查 App 是否有新版本 (GitHub Releases, 優先支援 Zip 全量更新)"""
         try:
             import requests
@@ -1081,14 +1136,18 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                          tk.messagebox.showwarning("無法更新", f"發現新版本 {latest_tag}，但在發布文件中找不到 .zip 或 .exe 檔。")
                 else:
                     # 若 remote <= local (包含相等)，視為不需更新
-                    tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。\n(雲端最新: {latest_tag})")
+                    if not silent:
+                        tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。\n(雲端最新: {latest_tag})")
             elif resp.status_code == 404:
-                tk.messagebox.showerror("檢查失敗", "找不到發布版本 (GitHub Repo 未發布 Release 或設為私有)。")
+                if not silent:
+                    tk.messagebox.showerror("檢查失敗", "找不到發布版本 (GitHub Repo 未發布 Release 或設為私有)。")
             else:
-                tk.messagebox.showerror("檢查失敗", f"無法連接伺服器 (Status: {resp.status_code})。")
+                if not silent:
+                    tk.messagebox.showerror("檢查失敗", f"無法連接伺服器 (Status: {resp.status_code})。")
             
         except Exception as e:
-            tk.messagebox.showerror("檢查錯誤", f"檢查更新時發生錯誤:\n{str(e)}")
+            if not silent:
+                tk.messagebox.showerror("檢查錯誤", f"檢查更新時發生錯誤:\n{str(e)}")
 
     def perform_self_update(self, download_url):
         try:
@@ -1152,11 +1211,53 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             subprocess.Popen(f'cmd /c "{cmd_command}"', shell=True)
             
             # 關閉主程式
-            self.quit()
-            sys.exit()
+            self.destroy()
+            sys.exit(0)
             
         except Exception as e:
-            tk.messagebox.showerror("更新失敗", f"無法完成更新: {e}")
+            tk.messagebox.showerror("更新錯誤", f"無法執行自動更新:\n{e}")
+
+    def check_core_update_silent(self):
+        """背景檢查 yt-dlp 是否有更新"""
+        def _bg_check():
+            try:
+                # 1. 取得本地版本
+                local_ver_str = "0"
+                try:
+                    import yt_dlp.version
+                    local_ver_str = yt_dlp.version.__version__
+                except:
+                    return # 未安裝或無法讀取
+
+                # 2. 取得遠端版本 (使用 GitHub API，與手動檢查源保持一致)
+                import requests
+                resp = requests.get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest", timeout=10)
+                if resp.status_code != 200: return
+                
+                data = resp.json()
+                remote_tag = data.get("tag_name", "0")
+                
+                # 3. 比對 (yt-dlp 使用 YYYY.MM.DD 格式)
+                def parse(v):
+                    try:
+                        return tuple(map(int, v.lower().lstrip('v').split('.')))
+                    except: return (0,0,0)
+                
+                if parse(remote_tag) > parse(local_ver_str):
+                     # 有更新
+                     self.after(0, lambda: self._on_core_update_found(remote_tag))
+                     
+            except Exception: pass
+        
+        import threading
+        threading.Thread(target=_bg_check, daemon=True).start()
+
+    def _on_core_update_found(self, version):
+        if hasattr(self, 'show_nav_badge'): self.show_nav_badge("About")
+        if hasattr(self, 'btn_update_ytdlp'): self.show_widget_badge(self.btn_update_ytdlp, 'core_update')
+        # self.log(f"發現 yt-dlp 新版本 {version}，請至「設定」更新。") # 保持日誌乾淨可不加
+
+
 
 if __name__ == "__main__":
     app = App()
