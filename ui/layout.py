@@ -363,17 +363,32 @@ class AppLayoutMixin:
         hw_frame = ctk.CTkFrame(self.tab_basic, fg_color="transparent")
         hw_frame.grid(row=0, column=0, sticky="nw", padx=20, pady=20)
         
-        self.switch_hw = ctk.CTkSwitch(hw_frame, text="硬體加速: 偵測中...", variable=self.var_hardware_accel,
+        def on_hw_toggle():
+            if self.var_hardware_accel.get():
+                # User turned it ON
+                msg = (
+                    "開啟後可能出現『檔案畫質略差、體積大』及『轉檔時會佔用顯卡資源 (影響遊戲效能)』等問題。\n"
+                    "確定要啟用嗎？"
+                )
+                # 使用 messagebox 需在此處 import 或確保已可用
+                try:
+                    import tkinter.messagebox as messagebox
+                    if not messagebox.askyesno("硬體加速", msg, icon="warning"):
+                        self.var_hardware_accel.set(False) 
+                except: pass
+            
+            if hasattr(self, 'save_config'): self.save_config()
+
+        self.switch_hw = ctk.CTkSwitch(hw_frame, text="硬體加速:偵測中...", variable=self.var_hardware_accel,
                                        font=("Microsoft JhengHei UI", 12, "bold"), text_color="gray60",
                                        progress_color="#2CC985", button_hover_color="#20A068",
-                                       state="disabled")
+                                       state="disabled", command=on_hw_toggle)
         self.switch_hw.pack(anchor="w")
         CTkToolTip(self.switch_hw, "使用顯示卡 GPU 加速合併與轉檔過程。\n自動偵測: NVIDIA, Intel, AMD, Apple (Mac)。")
 
         # --- Absolute Vertical Centering Layout ---
-        # Grid: Row 0 (Spacer), Row 1 (Content), Row 2 (Spacer)
         self.tab_basic.grid_rowconfigure(0, weight=1)
-        self.tab_basic.grid_rowconfigure(1, weight=0) # Content row, no expansion
+        self.tab_basic.grid_rowconfigure(1, weight=0) 
         self.tab_basic.grid_rowconfigure(2, weight=1)
         self.tab_basic.grid_columnconfigure(0, weight=1)
         
@@ -410,7 +425,6 @@ class AppLayoutMixin:
         # Removed Tooltip as requested
 
         # 3. URL Entry (Fills remaining space)
-        # Give it a good initial width so the bar doesn't shrink
         self.entry_url = ctk.CTkEntry(input_bar, width=450, height=50, font=("Microsoft JhengHei UI", 16), 
                                       placeholder_text="貼上影片連結...", 
                                       fg_color="transparent", border_width=0, text_color=("gray20", "white"))
@@ -431,7 +445,6 @@ class AppLayoutMixin:
 
 
         # --- 2. Settings Section (Modern Card) ---
-        # Added nice soft border and distinct background
         settings_card = ctk.CTkFrame(island_frame, fg_color=("white", "#232323"), corner_radius=15, border_width=1, border_color=("#E5E5E5", "#333333"))
         settings_card.pack(fill="x", pady=10)
         
@@ -503,7 +516,6 @@ class AppLayoutMixin:
 
 
     def setup_format_ui(self):
-        # --- Initialize Variables First to avoid AttributeError ---
         if not hasattr(self, 'var_video_res'): self.var_video_res = ctk.StringVar(value="Best (最高畫質)")
         if not hasattr(self, 'var_video_legacy'): self.var_video_legacy = ctk.BooleanVar(value=False)
         if not hasattr(self, 'var_audio_only'): self.var_audio_only = ctk.BooleanVar(value=False)
@@ -604,9 +616,100 @@ class AppLayoutMixin:
         create_switch(post_content, "內嵌字幕檔案 (Embed Subs)", self.var_embed_subs, 0, 1, "將下載的字幕檔直接封裝進影片 (Softsubs)")
         create_switch(post_content, "寫入中繼資料 (Metadata)", self.var_metadata, 1, 0, "寫入標題、作者、日期等詳細資訊")
         
-        # [New] SponsorBlock
+        # SponsorBlock with Options
         if not hasattr(self, 'var_sponsorblock'): self.var_sponsorblock = ctk.BooleanVar(value=False)
-        create_switch(post_content, "啟用 SponsorBlock (去除廣告)", self.var_sponsorblock, 1, 1, "自動移除影片中的業配、片頭片尾與廣告片段 (需重新編碼，下載速度較慢)")
+        
+        # 定義所有可用類別與預設狀態
+        if not hasattr(self, 'sb_vars'):
+            self.sb_vars = {
+                'sponsor': ctk.BooleanVar(value=True),
+                'selfpromo': ctk.BooleanVar(value=True),
+                'interaction': ctk.BooleanVar(value=True),
+                'intro': ctk.BooleanVar(value=True),
+                'outro': ctk.BooleanVar(value=True),
+                'preview': ctk.BooleanVar(value=True),
+                'music_offtopic': ctk.BooleanVar(value=True),
+                'filler': ctk.BooleanVar(value=True)
+            }
+            # 為了顯示名稱的映射
+            self.sb_labels = {
+                'sponsor': "贊助商廣告 (Sponsor)",
+                'selfpromo': "自我推銷 (Self-Promo)",
+                'interaction': "互動提醒 (Interaction)",
+                'intro': "片頭 (Intro)",
+                'outro': "片尾 (Outro)",
+                'preview': "預告/回顧 (Preview)",
+                'music_offtopic': "MV 無關片段 (Music Only)",
+                'filler': "無內容片段 (Filler)"
+            }
+
+        sb_frame = ctk.CTkFrame(post_content, fg_color="transparent")
+        sb_frame.grid(row=1, column=1, sticky="w", padx=20, pady=12)
+
+        def open_sb_settings():
+            top = ctk.CTkToplevel(self)
+            top.title("SponsorBlock 過濾設定")
+            top.geometry("400x600")
+            top.resizable(False, False)
+            top.attributes("-topmost", True)
+            
+            # Center
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 300
+            top.geometry(f"+{x}+{y}")
+            
+            ctk.CTkLabel(top, text="請勾選要【刪除】的片段類型", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(pady=15)
+            
+            chk_frame = ctk.CTkScrollableFrame(top, fg_color="transparent") 
+            chk_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+            
+            sb_descriptions = {
+                'sponsor': "廠商付費的業配內容 (如 VPN、手遊廣告)",
+                'selfpromo': "創作者推銷自己的周邊、課程或會員",
+                'interaction': "請求按讚、訂閱、分享的互動提醒",
+                'intro': "固定的開場動畫、Logo 或主題曲",
+                'outro': "片尾名單、結尾畫面或推薦卡片",
+                'preview': "影片開頭的精彩預告或前情提要",
+                'music_offtopic': "MV 中間的演戲、對話等非音樂部分，專用於音樂錄影帶 (MV)",
+                'filler': "離題閒聊、拖時間或無實質內容片段"
+            }
+            
+            for key, text in self.sb_labels.items():
+                var = self.sb_vars[key]
+                
+                # Item Container
+                item_frame = ctk.CTkFrame(chk_frame, fg_color="transparent")
+                item_frame.pack(fill="x", pady=8)
+                
+                cb = ctk.CTkCheckBox(item_frame, text=text, variable=var, font=("Microsoft JhengHei UI", 13, "bold"))
+                cb.pack(anchor="w")
+                
+                desc = sb_descriptions.get(key, "")
+                ctk.CTkLabel(item_frame, text=desc, font=("Microsoft JhengHei UI", 11), text_color=("gray50", "gray70")).pack(anchor="w", padx=(30, 0))
+                
+            ctk.CTkButton(top, text="確定", command=top.destroy, width=120, height=35).pack(pady=10)
+
+        def on_sb_toggle():
+            state = "normal" if self.var_sponsorblock.get() else "disabled"
+            self.btn_sb_config.configure(state=state)
+
+        sb_sw = ctk.CTkSwitch(sb_frame, text="啟用 SponsorBlock", variable=self.var_sponsorblock, 
+                              font=("Microsoft JhengHei UI", 13), progress_color="#2CC985", button_hover_color="#20A068",
+                              command=on_sb_toggle)
+        sb_sw.pack(side="left")
+
+        self.btn_sb_config = ctk.CTkButton(sb_frame, text="⚙ 設定過濾類別", 
+                                           width=140, height=28,
+                                           font=("Microsoft JhengHei UI", 12),
+                                           fg_color=("#3E3E3E", "gray30"), 
+                                           hover_color=("#505050", "gray40"),
+                                           command=open_sb_settings)
+        self.btn_sb_config.pack(side="left", padx=(10, 0))
+        
+        # Init state
+        on_sb_toggle()
+
+        CTkToolTip(sb_sw, "自動移除影片中的特定片段 (如廣告、片頭等)。\n點擊右側按鈕可自定義要刪除的類別。")
 
 
 
@@ -1436,7 +1539,7 @@ class AppLayoutMixin:
             self.entry_cookie_path.delete(0, "end")
             self.entry_cookie_path.insert(0, p)
 
-    # --- [New] Changelog Viewer ---
+    # --- Changelog Viewer ---
     def show_changelog(self):
         """讀取並顯示 CHANGELOG.md (最近 1 次更新)"""
         try:
@@ -1493,7 +1596,7 @@ class AppLayoutMixin:
             top.geometry(f"+{x}+{y}")
             top.attributes("-topmost", True)
             
-            # --- [New] Markdown Formatter ---
+            # --- Markdown Formatter ---
             def format_markdown(text):
                 lines = text.split('\n')
                 formatted = []
@@ -1623,10 +1726,10 @@ class AppLayoutMixin:
             self.txt_log.configure(state="normal")
             
             # Configure colors (Safe to call repeatedly)
-            self.txt_log.tag_config("error", foreground="#FF5555")   # Red
-            self.txt_log.tag_config("warning", foreground="#FFB86C") # Orange/Yellow
-            self.txt_log.tag_config("success", foreground="#50FA7B") # Green
-            self.txt_log.tag_config("info", foreground="#E0E0E0")    # Light Gray
+            self.txt_log.tag_config("error", foreground="#FF5555")   
+            self.txt_log.tag_config("warning", foreground="#FFB86C") 
+            self.txt_log.tag_config("success", foreground="#50FA7B")
+            self.txt_log.tag_config("info", foreground="#E0E0E0")    
             
             self.txt_log.insert("end", full_msg, tag)
             self.txt_log.see("end")

@@ -100,7 +100,7 @@ class YtDlpCore:
             import shutil
             if not shutil.which("ffmpeg"):
                 # 嘗試本地目錄
-                try: # Handle sys.argv[0] specific access
+                try: 
                     base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
                     local_ffmpeg = os.path.join(base_dir, "ffmpeg.exe") 
                     if os.path.exists(local_ffmpeg): ffmpeg_path = local_ffmpeg
@@ -127,7 +127,7 @@ class YtDlpCore:
             if "videotoolbox" in output: accel_types.append("Apple")
             
         except Exception:
-            pass # 偵測失敗視為無
+            pass 
             
         return accel_types
 
@@ -182,14 +182,12 @@ class YtDlpCore:
                     speed = self._remove_ansi(d.get('_speed_str', 'N/A'))
                     eta = self._remove_ansi(d.get('_eta_str', 'N/A'))
                     percent_str = f"{int(progress * 100)}%"
-                    # Pass speed and eta separately
                     if progress_callback: progress_callback(progress, f"下載中: {percent_str}", speed, eta)
             except: 
                 if progress_callback: progress_callback(0, "下載中...")
         
         elif d['status'] == 'finished':
             if progress_callback: progress_callback(0.99, "合併轉檔中 (修復音訊)...") 
-            # Log removed to prevent duplicate messages. Logic moved to MyLogger.debug to catch [Merger] event.
 
     def _run_download(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
         try:
@@ -224,7 +222,7 @@ class YtDlpCore:
             check_path = os.path.join(ffmpeg_loc, 'ffmpeg.exe')
             if not os.path.exists(check_path): check_path = os.path.join(ffmpeg_loc, 'ffmpeg')
         else:
-            check_path = "ffmpeg" # 嘗試系統路徑
+            check_path = "ffmpeg" 
 
         try:
             # 嘗試執行 -version 確保可用
@@ -299,15 +297,19 @@ class YtDlpCore:
             opts['writethumbnail'] = True
             opts['embedthumbnail'] = True
         if config.get('sponsorblock'): 
-            opts['sponsorblock_remove'] = ['all']
-            opts['force_keyframes_at_cuts'] = True # 強制在切割點重新編碼，確保剪接精確
+            # 直接使用使用者勾選的類別列表
+            sb_list = config.get('sponsor_cats_list', ['all'])
+            if not sb_list: sb_list = ['all'] # 防呆
+            
+            opts['sponsorblock_remove'] = sb_list
+            opts['force_keyframes_at_cuts'] = True 
             # opts['sponsorblock_api'] = 'https://sponsor.ajay.app' # 預設 API (通常不用改)
 
         # Hardware Acceleration
         hw_mode = config.get('hardware_accel', '')
         pp_args = []
         if "NVIDIA" in hw_mode: pp_args = ['-hwaccel', 'cuda']
-        elif "Intel" in hw_mode: pp_args = ['-hwaccel', 'auto'] # QSV setup can be complex, auto is safer
+        elif "Intel" in hw_mode: pp_args = ['-hwaccel', 'auto']
         elif "AMD" in hw_mode: pp_args = ['-hwaccel', 'auto'] 
         elif "Apple" in hw_mode: pp_args = ['-hwaccel', 'videotoolbox']
         elif "自動" in hw_mode: pp_args = ['-hwaccel', 'auto']

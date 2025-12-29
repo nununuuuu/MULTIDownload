@@ -210,7 +210,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.bind("<Button-1>", self._bg_click_handler)
         
         # --- Config & Data Management ---
-        # [New] Use 'data' directory for config and languages
         self.data_dir = os.path.join(app_path, "data")
         if not os.path.exists(self.data_dir):
             try:
@@ -221,7 +220,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.config_file = os.path.join(self.data_dir, "config.json")
         self.load_config()
         
-        # Check Core Library (Delayed to allow UI to show)
         self.after(1000, self.check_core_library)
 
         # 硬體加速偵測
@@ -305,11 +303,19 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # 6. SponsorBlock
         if hasattr(self, 'var_sponsorblock'):
             self.var_sponsorblock.set(default_config.get("sponsorblock", False))
+            
+        if hasattr(self, 'sb_vars'):
+            saved_cats = default_config.get("sponsor_cats_list", ["all"])
+            is_legacy_all = 'all' in saved_cats
+            for k, var in self.sb_vars.items():
+                if is_legacy_all: var.set(True)
+                else: var.set(k in saved_cats)
 
         # 7. Hardware Accel
         if hasattr(self, 'var_hardware_accel'):
              hw_val = default_config.get("hardware_accel", "不使用 (CPU)")
-             self.var_hardware_accel.set(hw_val != "不使用 (CPU)")
+             should_enable = (hw_val != "不使用 (CPU)")
+             self.var_hardware_accel.set(should_enable)
 
     def save_config(self):
         """儲存當前設定到檔案"""
@@ -322,6 +328,16 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 if remember_proxy:
                     proxy_val = self.entry_proxy.get().strip()
             
+            # SponsorBlock List
+            sb_list = ['all']
+            if hasattr(self, 'sb_vars'):
+                sb_list = [k for k, v in self.sb_vars.items() if v.get()]
+            
+            # Hardware Accel
+            hw_val = "不使用 (CPU)"
+            if hasattr(self, 'var_hardware_accel') and self.var_hardware_accel.get():
+                hw_val = self.detected_gpu if self.detected_gpu else "自動"
+
             data = {
                 "save_path": self.entry_path.get().strip(),
                 "cookie_mode": self.var_cookie_mode.get(),
@@ -329,7 +345,9 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 "max_concurrent": self.max_concurrent_downloads,
                 "remember_proxy": remember_proxy,
                 "proxy": proxy_val,
-                "sponsorblock": self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False
+                "sponsorblock": self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False,
+                "sponsor_cats_list": sb_list,
+                "hardware_accel": hw_val
             }
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -494,6 +512,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             'embed_subs': self.var_embed_subs.get() if hasattr(self, 'var_embed_subs') else True,
             'add_metadata': self.var_metadata.get() if hasattr(self, 'var_metadata') else True,
             'sponsorblock': self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False, 
+            'sponsor_cats_list': [k for k, v in self.sb_vars.items() if v.get()] if hasattr(self, 'sb_vars') else ['all'], 
             'hardware_accel': self.detected_gpu if (hasattr(self, 'var_hardware_accel') and self.var_hardware_accel.get() and self.detected_gpu) else "不使用 (CPU)",
         }
         
@@ -588,10 +607,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         except: pass
         
         # 2. Fallback: Try without Cookies (if first attempt failed)
-        # This handles cases like "Chrome cookie DB locked"
         if not success:
             try:
-                # Retry with no cookies, but keep proxy/UA if set
                 info = core.fetch_video_info(config['url'], cookie_type='none', user_agent=config.get('user_agent'), proxy=config.get('proxy'))
                 if info and 'title' in info and info['title'] != '未知標題' and 'error' not in info:
                     config['default_title'] = info['title']
@@ -938,7 +955,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         progress_win = ctk.CTkToplevel(self)
         progress_win.title("核心安裝中")
         progress_win.geometry("300x120")
-        progress_win.attributes("-topmost", True) # 置頂
+        progress_win.attributes("-topmost", True) 
         
         # 讓視窗居中
         x = self.winfo_x() + (self.winfo_width() // 2) - 150
@@ -1009,7 +1026,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                             z.extractall(target_dir)
                             
                         on_install_success("PyPI")
-                        return # 成功則結束
+                        return 
                         
             except Exception as pypi_e:
                 update_status(f"PyPI 失敗，切換 GitHub...")
@@ -1023,7 +1040,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 if gh_resp.status_code == 200:
                     gh_data = gh_resp.json()
                     tag_name = gh_data['tag_name']
-                    zip_url = gh_data['zipball_url'] # 下載源碼 Zip
+                    zip_url = gh_data['zipball_url'] 
                     
                     update_status(f"GitHub 版本: {tag_name}")
                     
@@ -1182,14 +1199,10 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 # 2. 尋找解壓後的根目錄 (處理 Zip 包多一層資料夾的情況)
                 src_path = extract_dir
                 items = os.listdir(extract_dir)
-                # 如果只有一個資料夾，且該資料夾內含檔案，則視為根目錄
                 if len(items) == 1 and os.path.isdir(os.path.join(extract_dir, items[0])):
                      src_path = os.path.join(extract_dir, items[0])
                 
                 # 3. 建構 CMD 指令 (覆蓋整個資料夾)
-                # timeout 2: 等待主程式關閉
-                # xcopy: 複製並覆蓋
-                # rmdir / del: 清理暫存
                 
                 cmd_command = (
                     f'timeout /t 2 /nobreak > NUL && '

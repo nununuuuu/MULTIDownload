@@ -12,12 +12,12 @@ class TaskLayoutMixin:
     def setup_tasks_ui(self):
         # 1. 佈局基礎 (Rows: 0=Nav, 1=Content)
         self.tab_tasks.grid_columnconfigure(0, weight=1)
-        self.tab_tasks.grid_columnconfigure(1, weight=0) # Remove old col config
-        self.tab_tasks.grid_rowconfigure(0, weight=0) # Nav
-        self.tab_tasks.grid_rowconfigure(1, weight=1) # Content
+        self.tab_tasks.grid_columnconfigure(1, weight=0) 
+        self.tab_tasks.grid_rowconfigure(0, weight=0) 
+        self.tab_tasks.grid_rowconfigure(1, weight=1) 
 
         # 2. 頂部導航欄 (Top Navigation)
-        self.nav_frame = ctk.CTkFrame(self.tab_tasks, fg_color="transparent") # Remove fixed height
+        self.nav_frame = ctk.CTkFrame(self.tab_tasks, fg_color="transparent") 
         self.nav_frame.grid(row=0, column=0, sticky="ew", pady=(20, 15), padx=20, columnspan=2)
         
         # Segmented Control - Modern Capsule Style
@@ -26,11 +26,10 @@ class TaskLayoutMixin:
             values=["等待中", "進行中", "已完成"], 
             command=self.switch_task_view,
             font=("Microsoft JhengHei UI", 14, "bold"),
-            height=42, # Taller
-            width=520, # Wider to breathe
-            corner_radius=21, # Capsule shape
+            height=42, 
+            width=520, 
+            corner_radius=21,
             selected_color="#1F6AA5", selected_hover_color="#144870",
-            # unselected_color/hover defaults are usually fine, but adding fg_color gives it a track
             fg_color=("gray85", "gray30") 
         )
         self.seg_tasks.pack(side="top") 
@@ -54,7 +53,6 @@ class TaskLayoutMixin:
         self.view_finished = ctk.CTkScrollableFrame(self.task_content_container, fg_color="transparent")
         
         # --- Empty State Labels (Overlay on Container) ---
-        # 這些標籤直接掛載在 container 上，使用 place 絕對置中，避免受 ScrollableFrame 內部高度影響
         self.lbl_waiting_empty = ctk.CTkLabel(self.task_content_container, text="目前沒有等待中的任務", text_color="gray", font=self.font_text)
         self.lbl_active_empty = ctk.CTkLabel(self.task_content_container, text="目前沒有執行中的任務", text_color="gray", font=self.font_text)
         self.lbl_finished_empty = ctk.CTkLabel(self.task_content_container, text="目前沒有已完成的紀錄", text_color="gray", font=self.font_text)
@@ -273,15 +271,11 @@ class TaskLayoutMixin:
         btn_cancel.pack(side="right", padx=(5, 10))
 
         # 2. Right Side: Status & Speed (Fixed width container to prevent jitter)
-        # 固定寬度容器，避免因為文字長度變化導致左邊的進度條伸縮
         status_frame = ctk.CTkFrame(row, fg_color="transparent", width=160, height=50) 
         status_frame.pack_propagate(False)
         status_frame.pack(side="right", padx=5, pady=6)
         
         # Status Text
-        # Removed fixed width to allow natural sizing, or use a smaller min-width logic if needed. 
-        # For now, natural size prevents empty space issues, but might cause slight jitter. 
-        # To fix jitter without fixed width, we can rely on right-alignment.
         lbl_stat = ctk.CTkLabel(status_frame, text=initial_status, font=("Microsoft JhengHei UI", 14, "bold"), text_color="#24A36C", anchor="e")
         lbl_stat.pack(anchor="e")
         self.active_task_widgets[task_id]['status_label'] = lbl_stat
@@ -352,7 +346,6 @@ class TaskLayoutMixin:
         widgets = self.active_task_widgets[task_id]
         
         try:
-            # Safety check: ensure widget still exists
             if not widgets['frame'].winfo_exists():
                 return
                 
@@ -365,7 +358,6 @@ class TaskLayoutMixin:
             if speed and eta:
                 widgets['meta_label'].configure(text=f"{speed} | {eta}")
         except Exception:
-            # Ignore errors if widget is destroyed during update
             pass
 
 
