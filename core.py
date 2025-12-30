@@ -2,6 +2,7 @@ import threading
 import os
 import re
 import time
+from datetime import datetime
 import sys
 
 class YtDlpCore:
@@ -36,6 +37,9 @@ class YtDlpCore:
                 info = ydl.extract_info(url, download=False)
                 return {
                     'title': info.get('title', '未知標題'),
+                    'thumbnail': info.get('thumbnail'),
+                    'duration': info.get('duration_string'),
+                    'uploader': info.get('uploader'),
                     'is_live': info.get('is_live', False),
                     'subtitles': list(set(list(info.get('subtitles', {}).keys()) + list(info.get('automatic_captions', {}).keys())))
                 }
@@ -198,12 +202,9 @@ class YtDlpCore:
             return
 
         # 鎖定程式所在目錄尋找 ffmpeg (優先順序: 當前目錄 -> bin 子目錄 -> 系統環境變數)
-        # 鎖定程式所在目錄尋找 ffmpeg
         if getattr(sys, 'frozen', False):
-            # 打包後，以執行檔所在目錄為準
             script_dir = os.path.dirname(sys.executable)
         else:
-            # 開發模式
             script_dir = os.path.dirname(os.path.abspath(__file__))
 
         ffmpeg_loc = None
@@ -215,7 +216,7 @@ class YtDlpCore:
         elif os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')) or os.path.exists(os.path.join(script_dir, 'ffmpeg')):
             ffmpeg_loc = script_dir
             
-        # --- [NEW] FFmpeg 狀態診斷與回報 ---
+        # --- FFmpeg 狀態診斷與回報 ---
         import subprocess
         check_path = None
         if ffmpeg_loc:
@@ -257,14 +258,12 @@ class YtDlpCore:
             else:
                 if log_callback: log_callback(f"[嚴重警告] 未偵測到 FFmpeg！\n高畫質下載 (1080p+) 需要合併影像與聲音，將導致失敗。\n請確認已將 ffmpeg.exe 放入程式資料夾。")
             
-            # 若本地失效但系統路徑也沒找到，這裡不強制 return，讓 yt-dlp 自己去報錯，或許可提供更詳細資訊
         except Exception as e:
             if log_callback: log_callback(f"[系統錯誤] 檢查 FFmpeg 時發生例外: {e}")
         # ----------------------------------
         
         # 3. Else: remains None (yt-dlp will use system PATH)
         
-        # Ensure config has save_path
         if not config.get('save_path'): config['save_path'] = os.getcwd()
 
         class MyLogger:
@@ -279,8 +278,14 @@ class YtDlpCore:
             def _clean(self, msg):
                 return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', msg)
 
+        filename_tmpl = f"{config['filename']}" if config.get('filename') else "%(title)s"
+        
+        if config.get('add_timestamp'):
+            ts_str = datetime.now().strftime("_%Y%m%d_%H%M%S")
+            filename_tmpl += ts_str
+            
         opts = {
-            'outtmpl': os.path.join(config['save_path'], f"{config['filename']}.%(ext)s" if config['filename'] else "%(title)s.%(ext)s"),
+            'outtmpl': os.path.join(config['save_path'], f"{filename_tmpl}.%(ext)s"),
             'progress_hooks': [lambda d: self._progress_hook(d, progress_callback, log_callback, title_callback)],
             'noplaylist': not config.get('playlist_mode', False), 
             'continuedl': True, 'overwrites': True,
@@ -320,6 +325,15 @@ class YtDlpCore:
                  'Merger': pp_args,
                  'VideoConvertor': pp_args
              }
+
+
+        # Live Stream Logic
+        if config.get('live_wait'):
+            opts['wait_for_video'] = (2, 10) 
+            if log_callback: log_callback("[直播] 已啟用智慧等待: 正在監控開台訊號...")
+            
+        if config.get('live_from_start'):
+            opts['live_from_start'] = True
 
 
 

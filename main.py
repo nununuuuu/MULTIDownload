@@ -8,7 +8,13 @@ from core import YtDlpCore
 import threading
 import uuid
 import time 
+from datetime import datetime, timedelta
 import webbrowser
+import requests 
+import zipfile
+import io
+import shutil
+from PIL import Image
 
 import json
 
@@ -166,12 +172,13 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         # 3. Content Container
         self.frames = {}
-        for name in ["Basic", "Format", "Sub", "Output", "Adv", "Tasks", "Log", "Settings", "About"]:
+        for name in ["Basic", "Format", "Live", "Sub", "Output", "Adv", "Tasks", "Log", "Settings", "About"]:
              frame = ctk.CTkFrame(self.main_view, corner_radius=10, fg_color=None)
              self.frames[name] = frame
         
         self.tab_basic = self.frames["Basic"]
         self.tab_format = self.frames["Format"]
+        self.tab_live = self.frames["Live"]
         self.tab_sub = self.frames["Sub"]
         self.tab_output = self.frames["Output"]
         self.tab_adv = self.frames["Adv"]
@@ -193,6 +200,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.setup_basic_ui()
         self.task_last_update_time = {}
         self.setup_format_ui()
+        self.setup_live_ui()
         self.setup_subtitle_ui()
         self.setup_output_ui()
         self.setup_advanced_ui()
@@ -228,6 +236,9 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         # 啟動自動更新檢查 (延遲 2 秒，避免影響啟動速度)
         self.after(2000, lambda: self.check_app_update(silent=True))
+        
+        # 啟動排程檢查
+        self.after(3000, self._scheduler_loop)
 
     def check_hardware_acceleration(self):
         def _task():
@@ -412,6 +423,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         self.show_toast("正在分析字幕...", color="#505050")
         self.log(f"正在分析: {url}")
+        self.update_thumbnail(None) # Reset thumbnail
         threading.Thread(target=self._run_fetch, args=(url, c_type, c_path, ua, proxy), daemon=True).start()
 
     def _run_playlist_check(self, url, c_type, c_path, ua, proxy):
@@ -458,6 +470,15 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     
                 elif "Sign in" in err_msg: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
             else:
+                # Live Stream Detection Logic
+                if info.get('is_live', False):
+                    self.show_toast("偵測到直播", color="#1F6AA5")
+                    # Use a slight delay to ensure toast is visible before modal dialog
+                    self.after(100, lambda: self._check_live_settings_popup())
+                
+                # Update Thumbnail
+                self.update_thumbnail(info)
+
                 if info['subtitles']:
                     self.show_toast("分析完成 (有字幕)")
                 else:
@@ -467,6 +488,68 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 self.after(50, lambda: self.update_subtitle_list_ui(info))
         
         self.after(0, _update_ui)
+
+    def _check_live_settings_popup(self):
+        """彈出視窗詢問是否前往直播設定"""
+        if messagebox.askyesno("直播偵測", "此連結為直播/首播影片。\n\n是否前往【直播設定】頁面檢查：\n1. 智慧等待 (Smart Wait)\n2. 錄製策略 (DVR)\n\n(若設定已確認可按「否」繼續)"):
+            self.select_frame("Live")
+
+    def update_thumbnail(self, info):
+        """非同步下載並顯示縮圖與資訊"""
+        if not hasattr(self, 'preview_card'): return
+        
+        # Reset if no info
+        if not info:
+             self.preview_card.pack_forget()
+             return
+
+        url = info.get('thumbnail')
+        title = info.get('title', 'Unknown')
+        duration = info.get('duration') # e.g. "3:45"
+        uploader = info.get('uploader')
+        
+        # Update Text Info immediately (Auto wrap handle by UI)
+        self.lbl_preview_title.configure(text=title)
+        
+        meta_parts = []
+        if uploader: meta_parts.append(uploader)
+        if duration: meta_parts.append(duration)
+        if not meta_parts: meta_parts.append("Ready")
+        self.lbl_preview_meta.configure(text=" • ".join(meta_parts))
+
+        # Show Card
+        # Pack before search bar (input_bar master)
+        self.preview_card.pack(side="top", pady=(0, 10), fill="x", padx=10, before=self.entry_url.master.master)
+
+        if not url: return
+
+        def _fetch():
+            try:
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200:
+                    data = io.BytesIO(resp.content)
+                    pil_img = Image.open(data)
+                    
+                    # Fixed target: height 68
+                    base_height = 68
+                    w_percent = (base_height / float(pil_img.size[1]))
+                    w_size = int((float(pil_img.size[0]) * float(w_percent)))
+                    
+                    # Create CTkImage with explicit corner radius support in Label? 
+                    # CTkImage handles resizing.
+                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w_size, base_height))
+                    
+                    def _ui():
+                        if hasattr(self, 'lbl_thumb_img'):
+                             self.lbl_thumb_img.configure(image=ctk_img, text="", width=w_size)
+                             self.lbl_thumb_img.image = ctk_img # Keep reference
+                    self.after(0, _ui)
+                else:
+                    pass
+            except Exception as e:
+                print(f"Thumbnail Error: {e}")
+
+        threading.Thread(target=_fetch, daemon=True).start()
 
     def get_config_from_ui(self):
         url = self.entry_url.get().strip()
@@ -482,11 +565,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         selected_ext = raw_format.split(' ')[0]
         is_audio_only = selected_ext in ['mp3', 'm4a', 'wav', 'flac']
 
-        # Handle Live Mode (Ensure var_live_mode exists)
-        live_from_start = False
-        if hasattr(self, 'var_live_mode'):
-             live_from_start = (self.var_live_mode.get() == 'start')
-        
+
         config = {
             'url': url,
             'save_path': final_save_path,
@@ -505,15 +584,24 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             'cookie_type': self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none',
             'cookie_path': self.entry_cookie_path.get().strip(),
             'user_agent': self.entry_ua.get().strip() if hasattr(self, 'entry_ua') else None,
-            'proxy': self.entry_proxy.get().strip() if hasattr(self, 'entry_proxy') else None,
+            'proxy': self.var_proxy.get() if hasattr(self, 'var_proxy') else None,
+            'add_timestamp': self.var_add_timestamp.get() if hasattr(self, 'var_add_timestamp') else False,
             'is_live': False,
-            'live_from_start': live_from_start,
+
             'embed_thumbnail': self.var_embed_thumb.get() if hasattr(self, 'var_embed_thumb') else True,
             'embed_subs': self.var_embed_subs.get() if hasattr(self, 'var_embed_subs') else True,
             'add_metadata': self.var_metadata.get() if hasattr(self, 'var_metadata') else True,
             'sponsorblock': self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False, 
             'sponsor_cats_list': [k for k, v in self.sb_vars.items() if v.get()] if hasattr(self, 'sb_vars') else ['all'], 
             'hardware_accel': self.detected_gpu if (hasattr(self, 'var_hardware_accel') and self.var_hardware_accel.get() and self.detected_gpu) else "不使用 (CPU)",
+            
+            # Live Stream Settings
+            'live_wait': self.var_live_wait.get() if hasattr(self, 'var_live_wait') else False,
+            'live_from_start': self.var_live_from_start.get() if hasattr(self, 'var_live_from_start') else True,
+            
+            # Scheduler
+            'schedule_enabled': self.var_schedule_enable.get() if hasattr(self, 'var_schedule_enable') else False,
+            'schedule_time': self.entry_schedule_time.get().strip() if hasattr(self, 'entry_schedule_time') else "00:00",
         }
         
         return config
@@ -521,6 +609,36 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
     def on_add_task(self):
         base_config = self.get_config_from_ui()
         if not base_config: return
+        
+        # Schedule Logic
+        if base_config.get('schedule_enabled'):
+            try:
+                raw_time = base_config.get('schedule_time', "0000").replace(":", "").strip()
+                # 補零 (例: 930 -> 0930)
+                if len(raw_time) == 3: raw_time = "0" + raw_time
+                
+                if len(raw_time) != 4 or not raw_time.isdigit():
+                    raise ValueError("Invalid format")
+                    
+                hh = int(raw_time[0:2])
+                mm = int(raw_time[2:4])
+                
+                if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                     raise ValueError("Time out of range")
+
+                now = datetime.now()
+                target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+                if target <= now:
+                    target += timedelta(days=1)
+                
+                base_config['schedule_ts'] = target.timestamp()
+                base_config['schedule_str'] = target.strftime('%Y-%m-%d %H:%M')
+                
+                self.log(f"[預約] 任務已排程於: {base_config['schedule_str']}")
+                self.show_toast(f"預約成功: {base_config['schedule_str']}", duration=3000)
+            except Exception as e:
+                self.log(f"[預約錯誤] 時間格式錯誤: {e}", level="error")
+                base_config['schedule_enabled'] = False # Disable on error
         
         if self.pending_playlist_info:
             info = self.pending_playlist_info
@@ -553,6 +671,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 task_config['default_title'] = item.get('title', '未知標題')
                 task_config['playlist_mode'] = False 
                 task_config['filename'] = "" 
+                task_config['manual_start'] = True
                 
                 self.download_queue.append(task_config)
             
@@ -580,6 +699,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              threading.Thread(target=self._auto_fetch_title, args=(base_config,), daemon=True).start()
 
         # 加入佇列
+        base_config['manual_start'] = True 
         self.download_queue.append(base_config)
         self.log(f"已加入排程: {base_config['url']}")
         self.update_queue_ui()
@@ -591,6 +711,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
         self.clear_subtitle_ui() 
+        self.update_thumbnail(None)
+        self.focus() 
 
     def _auto_fetch_title(self, config):
         """Background thread to fetch title for waiting tasks"""
@@ -698,27 +820,127 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.entry_filename.delete(0, "end")
         self.clear_subtitle_ui()
 
+
+
+    def check_and_perform_shutdown(self):
+        """檢查是否需要執行關機/睡眠"""
+        if not hasattr(self, 'var_after_completion'): return
+        action = self.var_after_completion.get()
+        if action == 'none': return
+        
+        action_name = "自動關機" if action == 'shutdown' else "進入睡眠"
+        cmd = "shutdown /s /t 0" if action == 'shutdown' else "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"
+        
+        # Create Countdown Window
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("任務完成")
+        dialog.geometry("400x250")
+        dialog.attributes("-topmost", True)
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 200
+        y = self.winfo_y() + (self.winfo_height() // 2) - 125
+        dialog.geometry(f"+{x}+{y}")
+        
+        ctk.CTkLabel(dialog, text=f"所有任務已完成！\n即將執行 {action_name}", font=("Microsoft JhengHei UI", 16, "bold"), text_color="orange").pack(pady=(20, 10))
+        
+        lbl_timer = ctk.CTkLabel(dialog, text="60", font=("Arial", 48, "bold"), text_color="#1F6AA5")
+        lbl_timer.pack(pady=10)
+        
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        
+        cancel_flag = False
+        
+        def cancel():
+            nonlocal cancel_flag
+            cancel_flag = True
+            dialog.destroy()
+            self.show_toast(f"已取消 {action_name}")
+            
+        def execute_now():
+            nonlocal cancel_flag
+            cancel_flag = True 
+            dialog.destroy()
+            self.log(f"正在執行 {action_name}...")
+            os.system(cmd)
+            
+        ctk.CTkButton(btn_frame, text="取消 (Cancel)", command=cancel, fg_color="gray", hover_color="gray30").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="立即執行 (Now)", command=execute_now, fg_color="#D93025", hover_color="#B31412").pack(side="left", padx=10)
+        
+        # Countdown Loop
+        def update_timer(seconds):
+            if cancel_flag: return
+            if seconds <= 0:
+                execute_now()
+                return
+            
+            lbl_timer.configure(text=str(seconds))
+            dialog.after(1000, update_timer, seconds - 1)
+            
+        update_timer(60)
+
+    def _scheduler_loop(self):
+        """定期檢查排程任務"""
+        self.check_queue()
+        # 每 5 秒檢查一次
+        self.after(5000, self._scheduler_loop)
+
     def check_queue(self):
         """檢查並啟動排程任務"""
         # 更新 UI 狀態
         active_count = len(self.active_queue_tasks)
         queue_count = len(self.download_queue)
         
-        msg = f"下載中 ({active_count}/{self.max_concurrent_downloads}) | 等待中: {queue_count}"
+        # Prepare Status Suffix
+        status_suffix = ""
+        if hasattr(self, 'var_after_completion'):
+            act = self.var_after_completion.get()
+            if act == 'shutdown': status_suffix = " | 結束後關機"
+            elif act == 'sleep': status_suffix = " | 結束後睡眠"
+
+        msg = f"下載中 ({active_count}/{self.max_concurrent_downloads}) | 等待中: {queue_count}{status_suffix}"
+            
         if active_count > 0:
             self.downloading = True
             self.btn_download.configure(state="disabled", text="下載中...")
             self.lbl_status.configure(text=msg)
         elif active_count == 0 and queue_count == 0:
+            idle_msg = f"準備就緒{status_suffix}"
+            
             if self.downloading:
                 self.downloading = False
                 self.btn_download.configure(state="normal", text="開始下載")
-                self.lbl_status.configure(text="所有任務已完成！")
+                idle_msg = f"所有任務已完成！{status_suffix}"
                 self.progress_bar.set(0)
+                
+                self.check_and_perform_shutdown()
+            
+            if not self.downloading and hasattr(self, 'lbl_status'):
+                 self.lbl_status.configure(text=idle_msg)
 
-        # 啟動新任務
+        # 啟動新任務 (支援排程邏輯)
         while len(self.active_queue_tasks) < self.max_concurrent_downloads and self.download_queue:
-            next_config = self.download_queue.pop(0)
+            
+            start_index = -1
+            now_ts = datetime.now().timestamp()
+            
+            for i, config in enumerate(self.download_queue):
+                if config.get('schedule_enabled') and config.get('schedule_ts'):
+                    if now_ts < config['schedule_ts']:
+                        continue 
+                
+                if config.get('manual_start'):
+                    continue
+                
+                start_index = i
+                break
+            
+            if start_index == -1:
+                break
+                
+            next_config = self.download_queue.pop(start_index)
             self.update_queue_ui()
             self._start_core_download(next_config)
 
@@ -788,13 +1010,11 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
     def on_stop_download(self):
         if messagebox.askyesno("確認", "確定要停止所有排程任務嗎？\n(背景獨立任務不會被停止)"):
             self.log("正在停止所有排程任務...")
-            # 停止所有正在執行的
             for t_id, info in list(self.active_queue_tasks.items()):
                 try: 
                     info['status'] = 'cancelled'
                     info['core'].stop_download()
                 except: pass
-            # 清空等待隊列 
             if self.download_queue:
                 if messagebox.askyesno("確認", "是否同時清空等待中的排程清單？"):
                     self.download_queue.clear()
@@ -977,10 +1197,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.after(0, progress_win.destroy)
 
         try:
-            import requests 
-            import zipfile
-            import io
-            import shutil
             
             update_status("連線中...")
             
@@ -994,7 +1210,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 
                 def ask_restart():
                     if tk.messagebox.askyesno("需重啟", f"核心 ({source_name}) 安裝完成！\n必須重新啟動程式才能生效。\n是否立即重啟？"):
-                        import subprocess
                         subprocess.Popen([sys.executable] + sys.argv)
                         self.quit()
                         sys.exit()
@@ -1096,7 +1311,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
     def check_app_update(self, silent=False):
         """檢查 App 是否有新版本 (GitHub Releases, 優先支援 Zip 全量更新)"""
         try:
-            import requests
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             
             session = requests.Session()
@@ -1168,9 +1382,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
     def perform_self_update(self, download_url):
         try:
-
             
-            self.show_toast("系統更新", "正在下載新版本...", icon_color="blue")
+            self.show_toast("系統更新: 正在下載新版本...", duration=5000, color="#1F6AA5")
             self.update_idletasks()
             
             # 判斷更新類型
@@ -1183,7 +1396,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            self.show_toast("更新準備中", "正在安裝更新，程式將自動重啟...", icon_color="blue")
+            self.show_toast("更新準備中: 正在安裝更新，程式將自動重啟...", duration=5000, color="#1F6AA5")
             
             current_exe = os.path.basename(sys.executable)
             
@@ -1243,7 +1456,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     return # 未安裝或無法讀取
 
                 # 2. 取得遠端版本 (使用 GitHub API，與手動檢查源保持一致)
-                import requests
                 resp = requests.get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest", timeout=10)
                 if resp.status_code != 200: return
                 
@@ -1262,7 +1474,6 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                      
             except Exception: pass
         
-        import threading
         threading.Thread(target=_bg_check, daemon=True).start()
 
     def _on_core_update_found(self, version):

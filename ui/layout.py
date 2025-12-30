@@ -69,13 +69,12 @@ class AppLayoutMixin:
         self.sidebar_frame.grid_columnconfigure(0, minsize=5) 
         self.sidebar_frame.grid_columnconfigure(1, weight=1)
         
-        # (Icon, TooltipText)
-        # (IconFilename, TooltipText, FallbackChar)
         self.sidebar_items = {
             "Basic": ("home.png", "基本選項", "⌂"),      
             "Format": ("video.png", "格式/畫質", "🎞"),
+            "Live": ("live.png", "直播設定", "📡"),
             "Sub": ("sub.png", "字幕設定", "🔡"),
-            "Output": ("cut.png", "時間裁切", "✂"),
+            "Output": ("time.png", "裁切/預約", "⏰"),
             "Adv": ("adv.png", "進階選項", "🛠"),
             "Tasks": ("tasks.png", "任務列表", "📥"),
             "Log": ("log.png", "系統日誌", "⏱"),
@@ -84,12 +83,11 @@ class AppLayoutMixin:
         }
         
         # 上方按鈕
-        top_items = ["Basic", "Format", "Sub", "Output", "Adv", "Tasks"]
+        top_items = ["Basic", "Format", "Live", "Sub", "Output", "Adv", "Tasks"]
         for i, key in enumerate(top_items):
             if key not in self.sidebar_items: continue
             self._create_sidebar_item(key, i)
 
-        # 設定 Spacer (彈簧)，將第 10 列設為可伸縮，把後面的按鈕推到底部
         self.sidebar_frame.grid_rowconfigure(10, weight=1)
 
         # 下方按鈕 (Log, Settings, About)
@@ -103,7 +101,6 @@ class AppLayoutMixin:
             if hasattr(sys, '_MEIPASS'):
                 base_path = os.path.join(sys._MEIPASS, "icon")
             else:
-                # ui/layout.py -> ui -> project_root
                 base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icon")
                 
             path = os.path.join(base_path, filename)
@@ -163,8 +160,7 @@ class AppLayoutMixin:
         # 建立紅點
         badge = ctk.CTkFrame(self.sidebar_frame, width=12, height=12, corner_radius=6, fg_color="#FF3B30", border_width=2, border_color="#2b2b2b")
         
-        # 使用 place 相對定位於按鈕右上角
-        # in_ 參數讓它相對於 btn 定位
+
         badge.place(in_=btn, relx=0.75, rely=0.2, anchor="center")
         
         setattr(self, f"badge_{key}", badge)
@@ -175,33 +171,26 @@ class AppLayoutMixin:
         if hasattr(self, f"badge_widget_{badge_id}"): return
 
         try:
-            # 建立在 widget 的父容器上，避免被 widget 裁切
             badge = ctk.CTkFrame(widget.master, width=12, height=12, corner_radius=6, fg_color="#FF3B30", border_width=2, border_color="#2b2b2b")
-            # 定位於右上角
             badge.place(in_=widget, relx=0.98, rely=0.02, anchor="center")
             
             setattr(self, f"badge_widget_{badge_id}", badge)
         except Exception: pass
 
     def select_frame(self, name):
-        # Hide all frames
         for frame in self.frames.values():
             frame.grid_forget()
         
-        # Update Sidebar Styling (Indicator Logic)
         for key in self.nav_btns:
-            # Reset to inactive state
             self.nav_btns[key].configure(text_color=("gray50", "gray70"))
             if key in self.nav_indicators:
                 self.nav_indicators[key].configure(fg_color="transparent")
         
-        # Set Active State
         if name in self.nav_btns:
             self.nav_btns[name].configure(text_color="#1F6AA5")
             if name in self.nav_indicators:
                 self.nav_indicators[name].configure(fg_color="#1F6AA5")
         
-        # Show selected frame
         if name in self.frames:
             self.frames[name].grid(row=0, column=0, sticky="nsew")
             
@@ -245,7 +234,7 @@ class AppLayoutMixin:
 
         # 下載按鈕 (直接開始 - 加入並執行)
         self.btn_download = ctk.CTkButton(
-            self.bottom_frame, text="開始下載", width=100, height=35, font=self.font_btn, 
+            self.bottom_frame, text="快速下載", width=100, height=35, font=self.font_btn, 
             fg_color="#01814A", hover_color="#006030", command=self.on_start_download
         )
         self.btn_download.grid(row=0, column=3, padx=(5, 5))
@@ -258,22 +247,13 @@ class AppLayoutMixin:
         self.btn_add.grid(row=0, column=4, padx=(5, 0))
 
     def create_about_page(self):
-        # This method is assumed to exist or be created based on the instruction.
-        # The content below is derived from the user's provided 'Code Edit' snippet
-        # which implies these buttons are part of an 'about_frame'.
-        # Since 'self.about_frame' is not defined in the provided context,
-        # this is a placeholder for where these buttons would logically go.
-        # For the purpose of this edit, I'm placing it as a new method.
-        
-        # Placeholder for self.about_frame, assuming it's a CTkFrame
-        # If this method is called, self.about_frame should be initialized.
         if not hasattr(self, 'about_frame'):
             self.about_frame = ctk.CTkFrame(self.frames["About"], fg_color="transparent")
             self.about_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         btn_check_update = ctk.CTkButton(
             self.about_frame, text="檢查更新", command=self.check_app_update,
-            width=120, height=32, corner_radius=16, font=self.font_btn # Changed font to self.font_btn for consistency
+            width=120, height=32, corner_radius=16, font=self.font_btn 
         )
         btn_check_update.pack(pady=10)
         
@@ -285,79 +265,10 @@ class AppLayoutMixin:
         )
         btn_changelog.pack(pady=5)
         
-        # Author / Repo Info
-        # ... (rest of the file) ...
 
-    def show_changelog(self):
-        """讀取並顯示 CHANGELOG.md (最近 5 次更新)"""
-        import os
-        import sys
-        import re
-        import customtkinter as ctk
-        
-        try:
-            # 1. 決定檔案路徑
-            if getattr(sys, 'frozen', False):
-                base_path = os.path.dirname(sys.executable)
-            else:
-                base_path = os.path.dirname(os.path.abspath(__file__))
-                # 在開發模式下，layout.py 在 ui/ 資料夾，需往上一層
-                if os.path.basename(base_path) == "ui":
-                    base_path = os.path.dirname(base_path)
-
-            log_path = os.path.join(base_path, "CHANGELOG.md")
-            
-            content = "找不到更新日誌檔案。"
-            if os.path.exists(log_path):
-                with open(log_path, "r", encoding="utf-8") as f:
-                    full_content = f.read()
-                
-                # 2. 簡易解析：只取前 5 個版本
-                # 假設版本標題格式為 "## [YYYY..."
-                # Split by version header, keeping the delimiter
-                parts = re.split(r'(^## \[)', full_content, flags=re.MULTILINE)
-                
-                # parts[0] is usually header (ChangeLog title), subsequent are versions
-                # reconstruct
-                display_text = parts[0] 
-                count = 0
-                
-                # 從分割後的 list 重組，parts[i] 是 "## [", parts[i+1] 是內容
-                for i in range(1, len(parts), 2):
-                    if count >= 1: break # 只顯示最新的 1 次
-                    if i+1 < len(parts):
-                        display_text += parts[i] + parts[i+1]
-                        count += 1
-                
-                content = display_text.strip()
-            
-            # 3. 顯示視窗
-            top = ctk.CTkToplevel(self)
-            top.title("本次更新內容")
-            top.geometry("600x500")
-            
-            # Center window
-            x = self.winfo_x() + (self.winfo_width() // 2) - 300
-            y = self.winfo_y() + (self.winfo_height() // 2) - 250
-            top.geometry(f"+{x}+{y}")
-            
-            top.attributes("-topmost", True)
-            
-            textbox = ctk.CTkTextbox(top, font=("Consolas", 14), wrap="word")
-            textbox.pack(fill="both", expand=True, padx=10, pady=10)
-            textbox.insert("1.0", content)
-            textbox.configure(state="disabled") # Read-only
-            
-        except Exception as e:
-            # Assuming self.show_toast exists in the main App class
-            if hasattr(self, 'show_toast'):
-                self.show_toast("錯誤", f"無法讀取日誌: {e}")
-            else:
-                print(f"Error reading changelog: {e}")
 
 
     def setup_basic_ui(self):
-        # --- Hardware Acceleration Switch (Top-Left) ---
         if not hasattr(self, 'var_hardware_accel'): self.var_hardware_accel = ctk.BooleanVar(value=False)
         
         hw_frame = ctk.CTkFrame(self.tab_basic, fg_color="transparent")
@@ -365,12 +276,10 @@ class AppLayoutMixin:
         
         def on_hw_toggle():
             if self.var_hardware_accel.get():
-                # User turned it ON
                 msg = (
                     "開啟後可能出現『檔案畫質略差、體積大』及『轉檔時會佔用顯卡資源 (影響遊戲效能)』等問題。\n"
                     "確定要啟用嗎？"
                 )
-                # 使用 messagebox 需在此處 import 或確保已可用
                 try:
                     import tkinter.messagebox as messagebox
                     if not messagebox.askyesno("硬體加速", msg, icon="warning"):
@@ -394,11 +303,34 @@ class AppLayoutMixin:
         
         # Main Container (The Island) 
         island_frame = ctk.CTkFrame(self.tab_basic, fg_color="transparent")
-        island_frame.grid(row=1, column=0, sticky="n") 
+        island_frame.place(relx=0.5, rely=0.5, anchor="center")
         
+        # Spacer to enforce consistent width (720px)
+        ctk.CTkFrame(island_frame, width=720, height=0, fg_color="transparent").pack()
+        
+        # --- Thumbnail Preview Card (Above Search) ---
+        self.preview_card = ctk.CTkFrame(island_frame, fg_color=("white", "#2B2B2B"), corner_radius=12, border_width=1, border_color=("#1F6AA5", "#1F6AA5"))
+        
+        # Inner Layout
+        self.preview_card.grid_columnconfigure(1, weight=1)
+        
+        # 1. Image (Left) - Placeholder
+        self.lbl_thumb_img = ctk.CTkLabel(self.preview_card, text="", width=120, height=68, corner_radius=8, fg_color="gray20") # Aspect~ 16:9
+        self.lbl_thumb_img.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        
+        # 2. Info (Right)
+        self.info_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent")
+        self.info_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", pady=10, padx=(0, 10))
+        
+        self.lbl_preview_title = ctk.CTkLabel(self.info_frame, text="標題載入中...", font=("Microsoft JhengHei UI", 14, "bold"), anchor="w", justify="left", wraplength=500, text_color=("#1F6AA5", "#3B8ED0"))
+        self.lbl_preview_title.pack(fill="x")
+        
+        self.lbl_preview_meta = ctk.CTkLabel(self.info_frame, text="--:-- • --", font=("Microsoft JhengHei UI", 12), text_color="gray", anchor="w")
+        self.lbl_preview_meta.pack(fill="x", pady=(2, 0))
+
         # --- 1. Search Section ---
         search_section = ctk.CTkFrame(island_frame, fg_color="transparent")
-        search_section.pack(fill="x", pady=(0, 20)) 
+        search_section.pack(fill="x", pady=(0, 0)) 
         
         # Input Bar
         input_bar = ctk.CTkFrame(search_section, fg_color=("white", "#2b2b2b"), corner_radius=25, border_width=2, border_color=("#B0B0B0", "#484848"))
@@ -406,47 +338,38 @@ class AppLayoutMixin:
 
  
         
-        # 1. Analyze Button (Rightmost)
-        self.btn_analyze = ctk.CTkButton(input_bar, text="分析網址", height=48, width=130, font=("Microsoft JhengHei UI", 16, "bold"), 
-                                         fg_color=("#1F6AA5", "#3B8ED0"), hover_color=("#144870", "#1F6AA5"), corner_radius=24, command=self.on_fetch_info,
-                                         text_color="white")
-        self.btn_analyze.pack(side="right", padx=8)
-
+        
         # 2. Paste Button (Left of Analyze)
         def paste_url():
             try:
                 self.entry_url.delete(0, 'end')
                 self.entry_url.insert(0, self.clipboard_get())
+                if hasattr(self, 'on_fetch_info'):
+                    self.after(200, self.on_fetch_info) 
             except: pass
             
         btn_paste = ctk.CTkButton(input_bar, text="📋", width=50, height=50, fg_color="transparent", hover_color=("gray90", "#3a3a3a"), 
                                   text_color=("gray50", "gray80"), font=("Segoe UI Emoji", 22), command=paste_url, corner_radius=25)
         btn_paste.pack(side="right", padx=(5, 5))
-        # Removed Tooltip as requested
+        CTkToolTip(btn_paste, "貼上並自動分析網址")
 
         # 3. URL Entry (Fills remaining space)
         self.entry_url = ctk.CTkEntry(input_bar, width=450, height=50, font=("Microsoft JhengHei UI", 16), 
                                       placeholder_text="貼上影片連結...", 
                                       fg_color="transparent", border_width=0, text_color=("gray20", "white"))
         self.entry_url.pack(side="left", padx=15, fill="x", expand=True)
+        # Bind Enter key
+        if hasattr(self, 'on_fetch_info'):
+             self.entry_url.bind('<Return>', lambda event: self.on_fetch_info())
         
-        # sub_row for Hints
-        sub_row = ctk.CTkFrame(search_section, fg_color="transparent")
-        sub_row.pack(fill="x", pady=(15, 0))
-
+        
         # Restore Logic Variable (Hidden)
         self.var_playlist = ctk.BooleanVar(value=False)
-
-        # Hint text
-        hint_text = "提示：若網址為歌單或需要下載字幕請先分析網址，其餘皆可『直接下載』或『加入任務』等待下載"
-        # Center the hint since it's the only item
-        hint_label = ctk.CTkLabel(sub_row, text=hint_text, font=("Microsoft JhengHei UI", 12), text_color="#1F6AA5")
-        hint_label.pack(side="top", anchor="center")
 
 
         # --- 2. Settings Section (Modern Card) ---
         settings_card = ctk.CTkFrame(island_frame, fg_color=("white", "#232323"), corner_radius=15, border_width=1, border_color=("#E5E5E5", "#333333"))
-        settings_card.pack(fill="x", pady=10)
+        settings_card.pack(fill="x", pady=(10, 10))
         
         # Settings Content
         s_content = ctk.CTkFrame(settings_card, fg_color="transparent")
@@ -460,7 +383,21 @@ class AppLayoutMixin:
         ctk.CTkFrame(header_frame, width=4, height=18, fg_color="#1F6AA5", corner_radius=2).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(header_frame, text="快速設定 (Quick Settings)", font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
 
-        # Path
+        # Timestamp Switch (Header Right)
+        if not hasattr(self, 'var_add_timestamp'): self.var_add_timestamp = ctk.BooleanVar(value=False)
+        
+        self.switch_timestamp = ctk.CTkSwitch(header_frame, text="", variable=self.var_add_timestamp, 
+                                              progress_color="#2CC985", button_hover_color="#20A068", height=24, width=40)
+        self.switch_timestamp.pack(side="right", padx=(5, 0))
+        
+        lbl_ts = ctk.CTkLabel(header_frame, text="防止覆寫", font=("Microsoft JhengHei UI", 12), text_color=("gray40", "gray60"))
+        lbl_ts.pack(side="right")
+        
+        ts_hint = "啟用後會自動在檔名後方加入時間戳記，\n確保每次下載的檔名都是唯一的，避免舊檔案被覆寫。"
+        CTkToolTip(lbl_ts, ts_hint)
+        CTkToolTip(self.switch_timestamp, ts_hint)
+
+        # Path (Row 1)
         ctk.CTkLabel(s_content, text="儲存位置", font=("Microsoft JhengHei UI", 13), text_color=("gray40", "gray60")).grid(row=1, column=0, sticky="w", pady=5)
         
         path_box = ctk.CTkFrame(s_content, fg_color="transparent")
@@ -472,7 +409,7 @@ class AppLayoutMixin:
         ctk.CTkButton(path_box, text="瀏覽", width=70, height=30, fg_color=("#1F6AA5", "#1F6AA5"), hover_color=("#144870", "#144870"), 
                       text_color="white", font=("Microsoft JhengHei UI", 12), corner_radius=8, command=self.browse_folder).pack(side="left")
 
-        # Filename
+        # Filename (Row 2)
         ctk.CTkLabel(s_content, text="檔案名稱", font=("Microsoft JhengHei UI", 13), text_color=("gray40", "gray60")).grid(row=2, column=0, sticky="w", pady=5)
         
         self.entry_filename = ctk.CTkEntry(s_content, height=30, font=("Microsoft JhengHei UI", 13), placeholder_text="預設為影片原標題",
@@ -486,15 +423,12 @@ class AppLayoutMixin:
         """歌單模式時禁用不相關選項"""
         state = "disabled" if self.var_playlist.get() else "normal"
         
-        # 1. Filename (Playlist uses auto naming)
         if hasattr(self, 'entry_filename'):
             self.entry_filename.configure(state=state)
             if state == "disabled": self.entry_filename.configure(placeholder_text="播放清單模式下將自動命名")
             else: self.entry_filename.configure(placeholder_text="預設為原標題")
         
-        # 2. Start Download Button (Single download mostly) - actually Queue handles execution
         
-        # 3. Time Cut (Usually not applied to whole playlist)
         if hasattr(self, 'chk_cut'):
              self.chk_cut.configure(state=state)
              if state == "disabled":
@@ -502,7 +436,6 @@ class AppLayoutMixin:
                   if hasattr(self, 'entry_start'): self.entry_start.configure(state="disabled")
                   if hasattr(self, 'entry_end'): self.entry_end.configure(state="disabled")
         
-        # 4. Live Options (Not for playlists)
         if hasattr(self, 'rb_live_now'): self.rb_live_now.configure(state=state)
         if hasattr(self, 'rb_live_start'): self.rb_live_start.configure(state=state)
 
@@ -715,6 +648,64 @@ class AppLayoutMixin:
 
         self.on_format_change(None)
 
+    def setup_live_ui(self):
+        self.tab_live = self.frames["Live"]
+        
+        # Grid Configuration
+        self.tab_live.grid_columnconfigure(0, weight=1)
+        self.tab_live.grid_rowconfigure(0, weight=1) 
+        
+        center_box = ctk.CTkFrame(self.tab_live, fg_color="transparent")
+        center_box.grid(row=0, column=0, sticky="ew", padx=40)
+        center_box.grid_columnconfigure(0, weight=1)
+
+        # Title
+        ctk.CTkLabel(center_box, text="直播錄製設定 (Live Stream Settings)", font=("Microsoft JhengHei UI", 18, "bold"), text_color=("gray20", "gray80")).pack(pady=(0, 25))
+
+        # --- Helper for Cards (Standard Style) ---
+        def create_live_card(parent, title, icon="⚙️"):
+            card = ctk.CTkFrame(parent, fg_color=("gray95", "gray20"), corner_radius=15)
+            card.pack(fill="x", pady=10)
+            
+            # Header
+            header = ctk.CTkFrame(card, fg_color="transparent")
+            header.pack(fill="x", padx=20, pady=(15, 10))
+            
+            # Icon & Title
+            ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 18)).pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+            
+            # Content
+            content = ctk.CTkFrame(card, fg_color="transparent")
+            content.pack(fill="x", padx=20, pady=(0, 20))
+            return content
+
+        # Init Variables
+        if not hasattr(self, 'var_live_wait'): self.var_live_wait = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_live_from_start'): self.var_live_from_start = ctk.BooleanVar(value=True)
+
+        # --- Card 1: 智慧等待 ---
+        wait_content = create_live_card(center_box, "智慧等待 (Smart Wait)", icon="📡")
+        
+        s_wait = ctk.CTkSwitch(wait_content, text="啟用等待開台 (Wait for Stream)", variable=self.var_live_wait, 
+                               font=("Microsoft JhengHei UI", 13, "bold"), progress_color="#2CC985", height=32)
+        s_wait.pack(anchor="w", padx=10, pady=8)
+        CTkToolTip(s_wait, "僅對直播連結有效。\n若直播尚未開始，程式將持續監控直到開播。")
+        
+        # --- Card 2: 錄製策略 ---
+        rec_content = create_live_card(center_box, "錄製策略 (Recording Strategy)", icon="📼")
+        
+        s_rec = ctk.CTkSwitch(rec_content, text="嘗試從頭下載 (Live from Start)", variable=self.var_live_from_start,
+                              font=("Microsoft JhengHei UI", 13, "bold"), progress_color="#2CC985", button_hover_color="#20A068", height=32)
+        s_rec.pack(anchor="w", padx=10, pady=8)
+        CTkToolTip(s_rec, "僅對直播連結有效。\n若您在直播中途才開始錄製，嘗試抓取錯過的開頭片段。")
+
+        # --- Note ---
+        note_box = ctk.CTkFrame(center_box, fg_color="transparent")
+        note_box.pack(pady=20)
+        ctk.CTkLabel(note_box, text="提示：開啟「等待開台」後，任務狀態會顯示為「下載中」，但在開播前沒有進度條變化屬正常現象。", 
+                     text_color="#1F6AA5", font=("Microsoft JhengHei UI", 12)).pack()
+
     def update_dynamic_hint(self):
         choice = self.combo_format.get()
         
@@ -899,7 +890,6 @@ class AppLayoutMixin:
             for w in self.scroll_subs.winfo_children():
                 w.destroy()
             
-            # Add placeholder
             ctk.CTkLabel(self.scroll_subs, text="(請先分析網址)", text_color="gray", font=("Microsoft JhengHei UI", 16)).pack(pady=40)
 
     def update_subtitle_list_ui(self, info_dict):
@@ -1064,8 +1054,6 @@ class AppLayoutMixin:
              ctk.CTkLabel(self.scroll_subs, text="找不到符合的語言", text_color="gray").pack(pady=20)
              return
 
-        # Grouping Logic
-        # Common: zh-TW, zh-Hant, zh-Hans, en, ja, ko
         fav_codes = ['zh-tw', 'zh-hant', 'zh-hans', 'zh-cn', 'en', 'en-us', 'ja', 'ko']
         
         groups = {
@@ -1258,38 +1246,64 @@ class AppLayoutMixin:
         self.btn_reset_time.pack(side="left", padx=(20, 0))
         CTkToolTip(self.btn_reset_time, "重設為預設值")
 
-        # --- 2. 直播模式 (Live) --- 
-        live_card = create_section_card(scroll_container, "直播錄製模式 (Live Stream)", icon="🔴")
+        # --- 2. 排程下載 (Scheduler) ---
+        sched_card = create_section_card(scroll_container, "預約排程下載 (Scheduler)", icon="🕒")
         
-        if not hasattr(self, 'var_live_mode'): self.var_live_mode = ctk.StringVar(value="now")
+        if not hasattr(self, 'var_schedule_enable'): self.var_schedule_enable = ctk.BooleanVar(value=False)
         
-        # UI <-> Logic Mapping
-        self.live_map = {"從現在開始錄製 (Live Now)": "now", "從開頭追溯 (From Start)": "start"}
-        self.live_map_rev = {v: k for k, v in self.live_map.items()}
+        # Row 1: Switch
+        s_sched = ctk.CTkSwitch(sched_card, text="啟用指定時間下載 (離峰下載)", variable=self.var_schedule_enable, 
+                                font=("Microsoft JhengHei UI", 13, "bold"), progress_color="#2CC985", button_hover_color="#20A068", height=32)
+        s_sched.pack(anchor="w", padx=20, pady=5)
+        CTkToolTip(s_sched, "開啟後，新增的任務會暫停，直到指定時間才開始下載。\n適合掛機下載大型清單。")
         
-        def on_live_seg_change(val):
-            code = self.live_map.get(val, "now")
-            self.var_live_mode.set(code)
-            if code == "start":
-                self.lbl_live_hint.configure(text="提示：嘗試下載緩衝區內容，從直播開始處抓取 (取決於伺服器)")
-            else:
-                self.lbl_live_hint.configure(text="提示：僅錄製程式開始執行後的內容")
+        # Row 2: Time Input
+        t_frame = ctk.CTkFrame(sched_card, fg_color="transparent")
+        t_frame.pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkLabel(t_frame, text="每日啟動時間 :", font=("Microsoft JhengHei UI", 12)).pack(side="left")
+        
+        self.entry_schedule_time = ctk.CTkEntry(t_frame, width=100, placeholder_text="2330", 
+                                                font=("Consolas", 14, "bold"), justify="center")
+        self.entry_schedule_time.pack(side="left", padx=10)
+        self.entry_schedule_time.insert(0, "0000")
+        
+        
+        ctk.CTkLabel(t_frame, text="(24小時制 HHMM)", text_color="gray", font=("Microsoft JhengHei UI", 11)).pack(side="left")
 
-        bg_live = ctk.CTkFrame(live_card, fg_color="transparent")
-        bg_live.pack(fill="x", pady=5)
+        # --- 3. 任務完成後 (After Completion) ---
+        after_card = create_section_card(scroll_container, "任務完成後動作 (When Finished)", icon="🏁")
         
-        self.seg_live = ctk.CTkSegmentedButton(bg_live, values=list(self.live_map.keys()), 
-                                               command=on_live_seg_change,
-                                               selected_color="#D93025", selected_hover_color="#B31412", # YouTube Red
-                                               font=("Microsoft JhengHei UI", 13, "bold"), height=35)
-        self.seg_live.pack(fill="x", pady=(0, 10))
+        if not hasattr(self, 'var_after_completion'): self.var_after_completion = ctk.StringVar(value="none")
         
-        # Init State
-        cur_val = self.var_live_mode.get()
-        self.seg_live.set(self.live_map_rev.get(cur_val, list(self.live_map.keys())[0]))
+        # UI Mapping
+        self.after_act_map = {"保持開啟 (None)": "none", "進入睡眠 (Sleep)": "sleep", "自動關機 (Shutdown)": "shutdown"}
+        self.after_act_rev = {v: k for k, v in self.after_act_map.items()}
         
-        self.lbl_live_hint = ctk.CTkLabel(bg_live, text="提示：僅錄製程式開始執行後的內容", text_color="gray", font=self.font_small)
-        self.lbl_live_hint.pack(anchor="w", padx=5)
+        def on_after_act_change(val):
+            code = self.after_act_map.get(val, "none")
+            self.var_after_completion.set(code)
+            
+            hint = "執行完畢後保持電腦開啟。"
+            if code == "sleep": hint = "所有任務完成後 (佇列清空)，倒數 60 秒進入睡眠模式。"
+            elif code == "shutdown": hint = "所有任務完成後 (佇列清空)，倒數 60 秒自動關機。"
+            
+            self.lbl_after_hint.configure(text=f"💡 {hint}")
+            
+            if hasattr(self, 'check_queue'): self.check_queue()
+
+        seg_act = ctk.CTkSegmentedButton(after_card, values=list(self.after_act_map.keys()),
+                                         command=on_after_act_change,
+                                         font=("Microsoft JhengHei UI", 13, "bold"), height=35)
+        seg_act.pack(fill="x", padx=20, pady=10)
+        
+        cur_val = self.var_after_completion.get()
+        seg_act.set(self.after_act_rev.get(cur_val, list(self.after_act_map.keys())[0]))
+        
+        self.lbl_after_hint = ctk.CTkLabel(after_card, text="💡 執行完畢後保持電腦開啟。", text_color="gray", font=("Microsoft JhengHei UI", 11))
+        self.lbl_after_hint.pack(padx=20, pady=(0, 15), anchor="w")
+        
+        on_after_act_change(seg_act.get())
 
     def setup_advanced_ui(self):
         # 建立捲動區域以容納更多設定
@@ -1561,7 +1575,7 @@ class AppLayoutMixin:
                     if getattr(sys, 'frozen', False):
                         base = os.path.dirname(sys.executable)
                     else:
-                        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # ui/../
+                        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
                     
                     log_file = os.path.join(base, "CHANGELOG.md")
                     if os.path.exists(log_file):
@@ -1702,7 +1716,6 @@ class AppLayoutMixin:
         self.txt_log.pack(fill="both", expand=True, padx=8, pady=8)
         self.txt_log.configure(state="disabled") 
 
-    # Deprecated: clear_log is now internal to setup_log_ui, but valid for external calls if any
     def clear_log(self):
         if hasattr(self, 'txt_log'):
              self.txt_log.configure(state="normal")
@@ -1713,7 +1726,6 @@ class AppLayoutMixin:
         timestamp = time.strftime("%H:%M:%S")
         full_msg = f"[{timestamp}] {msg}\n"
         
-        # Determine color tag based on content
         tag = "info"
         if any(x in msg for x in ["[錯誤]", "Error", "失敗", "系統錯誤"]):
             tag = "error"
@@ -1725,7 +1737,6 @@ class AppLayoutMixin:
         try:
             self.txt_log.configure(state="normal")
             
-            # Configure colors (Safe to call repeatedly)
             self.txt_log.tag_config("error", foreground="#FF5555")   
             self.txt_log.tag_config("warning", foreground="#FFB86C") 
             self.txt_log.tag_config("success", foreground="#50FA7B")
