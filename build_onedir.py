@@ -4,6 +4,10 @@ import shutil
 import sys
 
 def build():
+    # 強制設定 stdout/stderr 為 UTF-8，避免 GitHub Actions Windows Runner 編碼錯誤
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
     # 0. 環境準備
     project_root = os.path.dirname(os.path.abspath(__file__))
     icon_dir = os.path.join(project_root, "icon")
