@@ -23,6 +23,7 @@ from constants import APP_VERSION, GITHUB_REPO, DEFAULT_APPEARANCE_MODE, CODE_TO
 from ui.layout import AppLayoutMixin
 from ui.tasks import TaskLayoutMixin
 from ui.tooltip import CTkToolTip
+from ui.custom_titlebar import setup_custom_titlebar # [UI] Import Title Bar Logic
 
 ctk.set_default_color_theme("blue")
 
@@ -99,10 +100,15 @@ class PlaylistSelectionDialog(ctk.CTkToplevel):
         self.destroy()
 
 class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
+    setup_custom_titlebar = setup_custom_titlebar # [UI] Attach Method
+
     def __init__(self):
         super().__init__()
         self.title("MULTIDownload")
         self.geometry("900x780") 
+        
+        # [Anti-Flicker] 啟動時完全透明，避免渲染過程被看見
+        self.attributes("-alpha", 0.0) 
         
         # 設定應用程式圖示 (Runtime Icon)
         try:
@@ -153,19 +159,28 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.max_concurrent_downloads = 1 
         self.bg_tasks = {}       
 
-        # --- Layout Logic: 1 row, 2 cols (Static Sidebar | Content) ---
-        self.grid_rowconfigure(0, weight=1)
+        # --- Layout Logic: 2 rows (TitleBar | Content), 2 cols (Static Sidebar | Content) ---
+        self.grid_rowconfigure(0, weight=0) # Row 0: Title Bar
+        self.grid_rowconfigure(1, weight=1) # Row 1: Content
         self.grid_columnconfigure(0, minsize=60) 
         self.grid_columnconfigure(1, weight=1)   
 
-        # 1. Sidebar Frame (Static)
+        # [UI] 建立自定義標題列
+        self.setup_custom_titlebar()
+        
+        # [Anti-Flicker] 監聽視窗顯示/恢復事件，解決最小化還原時的白底閃爍
+        self.bind("<Map>", self._handle_window_restore)
+        # [Anti-Flicker] 監聽視窗隱藏事件（最小化前），預先設置透明度
+        self.bind("<Unmap>", self._handle_window_hide)
+
+        # 1. Sidebar Frame (Static) -> Row 1
         self.sidebar_frame = ctk.CTkFrame(self, width=60, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid(row=1, column=0, sticky="nsew") # Grid to Row 1
         self.sidebar_frame.grid_rowconfigure(10, weight=1)
 
-        # 2. Main Content Area
+        # 2. Main Content Area -> Row 1
         self.main_view = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_view.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self.main_view.grid(row=1, column=1, sticky="nsew", padx=10, pady=10) # Grid to Row 1
         self.main_view.grid_rowconfigure(0, weight=1)     
         self.main_view.grid_rowconfigure(1, weight=0)      
         self.main_view.grid_columnconfigure(0, weight=1)
@@ -252,6 +267,9 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         # 啟動排程檢查
         self.after(3000, self._scheduler_loop)
+
+        # [Anti-Flicker] 所有 UI 已構建完成，等待充足時間確保完全渲染後再啟動淡入動畫
+        self.after(300, self._fade_in_window)
 
     def check_hardware_acceleration(self):
         def _task():
@@ -804,7 +822,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         toast.overrideredirect(True) 
         
         x = self.winfo_x() + self.winfo_width() - 220
-        y = self.winfo_y() + 45
+        y = self.winfo_y() + 60
         toast.geometry(f"200x50+{x}+{y}")
         toast.attributes("-alpha", 1.0)
         toast.attributes("-topmost", True)
@@ -934,6 +952,158 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             dialog.after(1000, update_timer, seconds - 1)
             
         update_timer(60)
+
+    def _fade_in_window(self, alpha=0.0, step=0, start_y=None, target_y=None):
+        """滑入 + 淡入組合動畫：從下方滑入並淡入"""
+        max_steps = 15  # 減少步數以加快動畫 (150ms)
+        slide_distance = 20  # 減少滑動距離以更微妙
+        
+        # 第一次調用時，儲存當前位置作為目標位置
+        if start_y is None:
+            try:
+                geometry = self.geometry()
+                # 解析格式 "widthxheight+x+y"
+                parts = geometry.replace('x', '+').split('+')
+                target_y = int(parts[2])
+                start_y = target_y + slide_distance  # 起始位置在下方
+                # 設置起始位置
+                current_x = int(parts[1].split('x')[0]) if 'x' in parts[1] else int(parts[1])
+                width = int(parts[0])
+                height = int(parts[1].split('x')[1]) if 'x' in parts[1] else int(parts[0].split('x')[1])
+                self.geometry(f"{width}x{height}+{current_x}+{start_y}")
+            except:
+                # 如果獲取位置失敗，退回到純淡入
+                target_y = None
+                start_y = None
+        
+        if step < max_steps:
+            # 計算當前步驟的進度 (0.0 到 1.0)
+            progress = step / max_steps
+            
+            # 淡入：alpha 從 0 到 1
+            alpha = progress
+            
+            try:
+                self.attributes("-alpha", alpha)
+                
+                # 滑入：Y 位置從 start_y 到 target_y
+                if start_y is not None and target_y is not None:
+                    current_y = int(start_y + (target_y - start_y) * progress)
+                    geometry = self.geometry()
+                    parts = geometry.replace('x', '+').split('+')
+                    current_x = int(parts[1].split('x')[0]) if 'x' in parts[1] else int(parts[1])
+                    width = int(parts[0])
+                    height = int(parts[1].split('x')[1]) if 'x' in parts[1] else int(parts[0].split('x')[1])
+                    self.geometry(f"{width}x{height}+{current_x}+{current_y}")
+                
+                # 下一步
+                self.after(10, lambda: self._fade_in_window(alpha, step + 1, start_y, target_y))
+            except:
+                pass
+        else:
+            # 動畫完成，確保最終狀態正確
+            try:
+                self.attributes("-alpha", 1.0)
+                if target_y is not None:
+                    geometry = self.geometry()
+                    parts = geometry.replace('x', '+').split('+')
+                    current_x = int(parts[1].split('x')[0]) if 'x' in parts[1] else int(parts[1])
+                    width = int(parts[0])
+                    height = int(parts[1].split('x')[1]) if 'x' in parts[1] else int(parts[0].split('x')[1])
+                    self.geometry(f"{width}x{height}+{current_x}+{target_y}")
+            except:
+                pass
+
+    def _fade_out_window(self, step=0, start_y=None, target_y=None, callback=None):
+        """滑出 + 淡出組合動畫：向下滑出並淡出（最小化前）"""
+        max_steps = 15  # 與淡入動畫同步
+        slide_distance = 20  # 與淡入動畫同步
+        
+        # 第一次調用時，儲存當前位置作為起始位置
+        if start_y is None:
+            try:
+                geometry = self.geometry()
+                parts = geometry.replace('x', '+').split('+')
+                start_y = int(parts[2])
+                target_y = start_y + slide_distance  # 目標位置在下方
+            except:
+                # 如果獲取位置失敗，退回到純淡出
+                target_y = None
+                start_y = None
+        
+        if step < max_steps:
+            # 計算當前步驟的進度 (0.0 到 1.0)
+            progress = step / max_steps
+            
+            # 淡出：alpha 從 1 到 0
+            alpha = 1.0 - progress
+            
+            try:
+                self.attributes("-alpha", alpha)
+                
+                # 滑出：Y 位置從 start_y 到 target_y
+                if start_y is not None and target_y is not None:
+                    current_y = int(start_y + (target_y - start_y) * progress)
+                    geometry = self.geometry()
+                    parts = geometry.replace('x', '+').split('+')
+                    current_x = int(parts[1].split('x')[0]) if 'x' in parts[1] else int(parts[1])
+                    width = int(parts[0])
+                    height = int(parts[1].split('x')[1]) if 'x' in parts[1] else int(parts[0].split('x')[1])
+                    self.geometry(f"{width}x{height}+{current_x}+{current_y}")
+                
+                # 下一步
+                self.after(10, lambda: self._fade_out_window(step + 1, start_y, target_y, callback))
+            except:
+                pass
+        else:
+            # 動畫完成，執行回調（最小化）
+            if callback:
+                callback()
+
+    def _handle_window_hide(self, event):
+        """當視窗即將隱藏（最小化）時，設置標記和透明度"""
+        if event.widget == self:
+            try:
+                self.attributes("-alpha", 0.0)
+                self._was_minimized = True  # 明確標記為最小化
+            except:
+                pass
+
+    def _handle_window_restore(self, event):
+        """當視窗顯示時，只有從最小化恢復才播放動畫"""
+        if event.widget == self:
+            # 如果正在執行最大化操作，不要干預
+            if getattr(self, '_is_maximizing', False):
+                return
+            
+            # 檢查是否是從最小化恢復
+            if getattr(self, '_was_minimized', False):
+                # 是從最小化恢復，播放淡入動畫
+                self._was_minimized = False  # 清除標記
+                try:
+                    self.update_idletasks()
+                except:
+                    pass
+                self.after(100, lambda: self._fade_in_window(alpha=0.0))
+            else:
+                # 不是從最小化恢復（可能是最大化等）
+                # 先完成UI渲染，避免看到黑色背景
+                try:
+                    self.update_idletasks()
+                    self.attributes("-alpha", 1.0)
+                except:
+                    pass
+
+    def _force_refresh_ui(self):
+        self.update_idletasks()
+
+        try:
+            current_alpha = self.attributes("-alpha")
+            if current_alpha >= 1.0:
+                self.attributes("-alpha", 0.99)
+                self.after(10, lambda: self.attributes("-alpha", 1.0))
+        except Exception:
+            pass
 
     def _scheduler_loop(self):
         """定期檢查排程任務"""
@@ -1563,7 +1733,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                                 if content != self.entry_url.get():
                                     self.entry_url.delete(0, "end")
                                     self.entry_url.insert(0, content)
-                                    self.show_toast("📋 已偵測並填入剪貼簿連結")
+                                    self.show_toast("已偵測並填入剪貼簿連結")
                                     self.after(500, self.on_fetch_info)
                     except: pass
 

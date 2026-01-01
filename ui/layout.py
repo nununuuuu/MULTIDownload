@@ -1819,34 +1819,9 @@ class AppLayoutMixin:
             ctk.CTkLabel(f, text=desc, font=("Microsoft JhengHei UI", 12), text_color=("gray50", "gray60"), wraplength=500, justify="left").pack(anchor="w", padx=(40, 0), pady=(5,0))
 
         _add_item("📋", "監聽剪貼簿", self.var_clipboard, "若啟用，會自動檢測並搜尋剪貼簿中的影片連結。")
-        
-        def on_top_toggle():
-            self.attributes("-topmost", self.var_always_on_top.get())
-            _save()
-            if self.var_always_on_top.get(): self.show_toast("📌 視窗固定(On)")
-            else: self.show_toast("視窗固定(Off)")
-
-        # 使用自定義 command 來觸發即時置頂
-        _add_item("📌", "視窗最上層顯示", self.var_always_on_top, "若啟用，視窗將會永遠顯示在螢幕最上層。")
         _add_item("🔔", "通知系統", self.var_notification, "若啟用，下載完成時會發送系統通知。")
         _add_item("⬇", "自動開始下載", self.var_auto_start, "若啟用，新增任務後會自動開始下載。")
-        
-        # Divider
-        ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")
-        
-        # Update Section
-        update_frame = ctk.CTkFrame(container, fg_color="transparent")
-        update_frame.pack(fill="x", padx=30, pady=20)
-        
-        # Update Item
-        f_upd = ctk.CTkFrame(update_frame, fg_color="transparent")
-        f_upd.pack(fill="x")
-        r_upd = ctk.CTkFrame(f_upd, fg_color="transparent")
-        r_upd.pack(fill="x")
-        ctk.CTkLabel(r_upd, text="🔄", font=("Segoe UI Emoji", 18), width=30).pack(side="left")
-        ctk.CTkLabel(r_upd, text="自動檢查更新", font=("Microsoft JhengHei UI", 15, "bold")).pack(side="left", padx=5)
-        ctk.CTkSwitch(r_upd, text="", variable=self.var_auto_update, command=_save, progress_color="#1F6AA5", button_hover_color="#144870", width=40).pack(side="right")
-        ctk.CTkLabel(f_upd, text="啟動時檢查更新。", font=("Microsoft JhengHei UI", 12), text_color=("gray50", "gray60")).pack(anchor="w", padx=(40, 0), pady=(5,0))
+        _add_item("🔄", "自動檢查更新", self.var_auto_update, "啟動時檢查更新。")
 
         # Bottom Divider
         ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")

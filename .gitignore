@@ -15,7 +15,6 @@ data/config.json
 # --- Build Artifacts (PyInstaller) ---
 build/
 dist/
-*.spec
 
 # --- Downloaded Binaries / Core ---
 # 這些通常很大且可以重新下載，不建議放入 Git
@@ -33,8 +32,9 @@ ui/changelog_gen.py
 
 
 # --- Build Scripts ---
-build_onedir.py
-build_onefile.py
+
+
+# --- OS Specific ---
 
 
 
