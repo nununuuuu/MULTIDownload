@@ -95,7 +95,7 @@ class AppLayoutMixin:
         for i, key in enumerate(bottom_items):
              if key not in self.sidebar_items: continue
              self._create_sidebar_item(key, 11+i)
-
+             
     def _load_icon(self, filename):
         try:
             if hasattr(sys, '_MEIPASS'):
@@ -178,9 +178,7 @@ class AppLayoutMixin:
         except Exception: pass
 
     def select_frame(self, name):
-        for frame in self.frames.values():
-            frame.grid_forget()
-        
+        # Update Nav
         for key in self.nav_btns:
             self.nav_btns[key].configure(text_color=("gray50", "gray70"))
             if key in self.nav_indicators:
@@ -191,8 +189,11 @@ class AppLayoutMixin:
             if name in self.nav_indicators:
                 self.nav_indicators[name].configure(fg_color="#1F6AA5")
         
+        # Switch Frame using Stacking (Lift)
         if name in self.frames:
+            # Ensure it is managed by grid (idempotent)
             self.frames[name].grid(row=0, column=0, sticky="nsew")
+            self.frames[name].tkraise()
             
     def change_appearance_mode_event(self, new_appearance_mode: str):
         ctk.set_appearance_mode(new_appearance_mode)
@@ -460,10 +461,10 @@ class AppLayoutMixin:
 
         opt_style = {
             "height": 40, "corner_radius": 8,
-            "fg_color": "#3E3E3E", 
-            "button_color": "#505050", "button_hover_color": "#606060",
-            "dropdown_fg_color": "#F0F0F0", "dropdown_hover_color": "#CCCCCC", "dropdown_text_color": "#000000",
-            "font": self.font_text, "dropdown_font": self.font_text, "text_color": "#FFFFFF"
+            "fg_color": ("gray90", "gray30"), 
+            "button_color": ("gray80", "gray40"), "button_hover_color": ("gray75", "gray35"),
+            "dropdown_fg_color": ("gray95", "gray25"), "dropdown_hover_color": ("gray85", "gray35"), "dropdown_text_color": ("black", "white"),
+            "font": self.font_text, "dropdown_font": self.font_text, "text_color": ("black", "white")
         }
 
         # --- Layout Setup ---
@@ -1436,7 +1437,7 @@ class AppLayoutMixin:
             if hasattr(self, 'save_config'): self.save_config()
             
         btn_file_mode = ctk.CTkButton(
-            f_input_box, text="啟用檔案模式", width=100, height=32, corner_radius=16,
+            f_input_box, text="檔案模式", width=100, height=32, corner_radius=16,
             fg_color="transparent", border_width=1, border_color=("gray70", "gray50"), text_color=("gray20", "gray80"),
             hover_color=("#D0E0F0", "#3A3A3A"),
             command=on_file_mode_click
@@ -1460,8 +1461,8 @@ class AppLayoutMixin:
         
         concurrent_values = [str(i) for i in range(1, 11)]
         self.combo_concurrent = ctk.CTkOptionMenu(perf_box, values=concurrent_values, width=120, height=35, command=self.update_concurrent_label, 
-                                                  fg_color="#3E3E3E", button_color="#505050", button_hover_color="#606060", text_color="#FFFFFF",
-                                                  dropdown_fg_color="#F0F0F0", dropdown_hover_color="#CCCCCC", dropdown_text_color="#000000")
+                                                  fg_color=("gray90", "gray30"), text_color=("black", "white"),
+                                                  button_color=("gray80", "gray40"), button_hover_color=("gray75", "gray35"))
         self.combo_concurrent.pack(side="left")
         self.combo_concurrent.set("1")
         
@@ -1749,161 +1750,136 @@ class AppLayoutMixin:
         print(full_msg.strip())
 
     def setup_settings_ui(self):
-        """設定分頁介面 (修改 constants.py)"""
-        # 1. 外層容器 (負責置中)
-        settings_frame = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
-        settings_frame.pack(fill="both", expand=True)
-        
-        # 2. 中央內容區塊
-        center_box = ctk.CTkFrame(settings_frame, fg_color=("gray95", "gray20"), corner_radius=20) # 修正顏色以配合 About 頁面
-        center_box.place(relx=0.5, rely=0.45, anchor="center", relwidth=0.7)
-        
-        # 標題
-        ctk.CTkLabel(center_box, text="外觀主題 (Appearance)", font=("Microsoft JhengHei UI", 18, "bold"), text_color=("gray20", "gray80")).pack(pady=(40, 30), padx=50)
-        
-        # --- 卡片式選單 (Grid Layout) ---
-        self.theme_grid = ctk.CTkFrame(center_box, fg_color="transparent")
-        self.theme_grid.pack(pady=(0, 30), padx=40, fill="x")
-        
-        self.theme_grid.grid_columnconfigure(0, weight=1)
-        self.theme_grid.grid_columnconfigure(1, weight=1)
-        self.theme_grid.grid_columnconfigure(2, weight=1)
-        
-        # Mapping: Display -> Value
-        self.theme_value_map = {
-            "System": "System",
-            "Light": "Light",
-            "Dark": "Dark"
-        }
-        
-        # UI Definition: Key -> (Icon, Label)
-        self.theme_ui_data = {
-            "System": ("🖥️", "系統預設"),
-            "Light": ("☀️", "淺色模式"),
-            "Dark": ("🌙", "深色模式")
-        }
-        
-        self.current_theme_selection = DEFAULT_APPEARANCE_MODE
-        self.theme_cards = {}
+        """設定分頁 (List Style - Refined)"""
+        # Main Scrollable
+        self.settings_scroll = ctk.CTkScrollableFrame(self.tab_settings, fg_color="transparent")
+        self.settings_scroll.pack(fill="both", expand=True)
 
-        def set_theme_selection(mode_key):
-            self.current_theme_selection = mode_key
-            update_card_visuals()
+        # Main Container
+        container = ctk.CTkFrame(self.settings_scroll, fg_color=("white", "#333333"), corner_radius=12)
+        container.pack(fill="x", padx=20, pady=20)
+        
+        # --- 1. Top Section ---
+        top_frame = ctk.CTkFrame(container, fg_color="transparent")
+        top_frame.pack(fill="x", padx=30, pady=20)
+        top_frame.grid_columnconfigure(1, weight=1)
+        
+        # Theme Row
+        ctk.CTkLabel(top_frame, text="🌗", font=("Segoe UI Emoji", 18)).grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ctk.CTkLabel(top_frame, text="主題", font=("Microsoft JhengHei UI", 15, "bold")).grid(row=0, column=0, sticky="w", padx=(35, 0))
+        
+        self.option_theme = ctk.CTkOptionMenu(
+            top_frame, values=["System", "Light", "Dark"], 
+            command=self.change_appearance_mode_event,
+            width=140, height=32,
+            fg_color=("gray90", "gray30"), text_color=("black", "white"),
+            button_color=("gray80", "gray40"), button_hover_color=("gray75", "gray35")
+        )
+        self.option_theme.grid(row=0, column=1, sticky="e")
+        self.option_theme.set(ctk.get_appearance_mode())
 
-        def on_enter(card_key):
-            if card_key != self.current_theme_selection:
-                self.theme_cards[card_key]["frame"].configure(fg_color=("#E0E0E0", "#2B2B2B"))
+        # Divider
+        ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")
+        
+        # --- 2. Toggles Section ---
+        toggles_frame = ctk.CTkFrame(container, fg_color="transparent")
+        toggles_frame.pack(fill="x", padx=30, pady=20)
+        
+        # Init Variables
+        if not hasattr(self, 'var_clipboard'): self.var_clipboard = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_notification'): self.var_notification = ctk.BooleanVar(value=True)
+        if not hasattr(self, 'var_auto_start'): self.var_auto_start = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_auto_update'): self.var_auto_update = ctk.BooleanVar(value=True)
+        if not hasattr(self, 'var_always_on_top'): self.var_always_on_top = ctk.BooleanVar(value=False)
+        # Fix HW Accel var persistence just in case
+        if not hasattr(self, 'var_hardware_accel'): self.var_hardware_accel = ctk.BooleanVar(value=False)
 
-        def on_leave(card_key):
-            if card_key != self.current_theme_selection:
-                self.theme_cards[card_key]["frame"].configure(fg_color="transparent")
+        def _save(): 
+             # Apply Always on Top immediately
+             if hasattr(self, 'var_always_on_top'):
+                 self.attributes("-topmost", self.var_always_on_top.get())
+             
+             if hasattr(self, 'save_config'): self.save_config()
 
-        def update_card_visuals():
-            for key, items in self.theme_cards.items():
-                frame = items["frame"]
-                icon_lbl = items["icon"]
-                text_lbl = items["text"]
-                
-                if key == self.current_theme_selection:
-                    frame.configure(
-                        fg_color=("#D0E0F0", "#252526"), 
-                        border_color="#1F6AA5",           
-                        border_width=2
-                    )
-                    icon_lbl.configure(text_color="#1F6AA5")
-                    text_lbl.configure(text_color="#1F6AA5")
-                else:
-                    frame.configure(
-                        fg_color="transparent",
-                        border_color=("gray70", "gray40"),
-                        border_width=1
-                    )
-                    icon_lbl.configure(text_color=("gray20", "gray80"))
-                    text_lbl.configure(text_color=("gray20", "gray80"))
-
-        # Create Card Frames
-        keys = ["System", "Light", "Dark"]
-        for i, key in enumerate(keys):
-            icon_char, label_text = self.theme_ui_data[key]
+        def _add_item(icon, title, var, desc):
+            f = ctk.CTkFrame(toggles_frame, fg_color="transparent")
+            f.pack(fill="x", pady=(0, 20))
             
-            card = ctk.CTkFrame(
-                self.theme_grid, 
-                height=140, 
-                corner_radius=15,
-                fg_color="transparent",
-                border_width=1,
-                border_color="gray50",
-                cursor="hand2"
-            )
-            card.grid(row=0, column=i, padx=10, sticky="ew")
+            # Row 1: Icon | Title | Switch
+            r1 = ctk.CTkFrame(f, fg_color="transparent")
+            r1.pack(fill="x")
             
-            lbl_icon = ctk.CTkLabel(card, text=icon_char, font=("Segoe UI Emoji", 22), text_color="gray")
-            lbl_icon.place(relx=0.5, rely=0.4, anchor="center")
+            ctk.CTkLabel(r1, text=icon, font=("Segoe UI Emoji", 18), width=30).pack(side="left")
+            ctk.CTkLabel(r1, text=title, font=("Microsoft JhengHei UI", 15, "bold")).pack(side="left", padx=5)
             
-            lbl_text = ctk.CTkLabel(card, text=label_text, font=("Microsoft JhengHei UI", 15, "bold"), text_color="gray")
-            lbl_text.place(relx=0.5, rely=0.75, anchor="center")
+            sw = ctk.CTkSwitch(r1, text="", variable=var, command=_save, progress_color="#1F6AA5", button_hover_color="#144870", width=40)
+            sw.pack(side="right")
             
-            for widget in [card, lbl_icon, lbl_text]:
-                widget.bind("<Button-1>", lambda e, k=key: set_theme_selection(k))
-                widget.bind("<Enter>", lambda e, k=key: on_enter(k))
-                widget.bind("<Leave>", lambda e, k=key: on_leave(k))
-            
-            self.theme_cards[key] = {
-                "frame": card,
-                "icon": lbl_icon,
-                "text": lbl_text
-            }
-            
-        update_card_visuals() 
+            # Row 2: Desc
+            ctk.CTkLabel(f, text=desc, font=("Microsoft JhengHei UI", 12), text_color=("gray50", "gray60"), wraplength=500, justify="left").pack(anchor="w", padx=(40, 0), pady=(5,0))
 
-        # --- 底部操作區 ---
+        _add_item("📋", "監聽剪貼簿", self.var_clipboard, "若啟用，會自動檢測並搜尋剪貼簿中的影片連結。")
         
-        # 警示文字 (移至按鈕上方，縮小並柔和化)
-        warn_box = ctk.CTkFrame(center_box, fg_color="transparent")
-        warn_box.pack(pady=(0, 10))
-        ctk.CTkLabel(warn_box, text="⚠️ 設定更改將於應用程式重啟後生效", text_color="#E67E22", font=("Microsoft JhengHei UI", 12)).pack()
+        def on_top_toggle():
+            self.attributes("-topmost", self.var_always_on_top.get())
+            _save()
+            if self.var_always_on_top.get(): self.show_toast("📌 視窗固定(On)")
+            else: self.show_toast("視窗固定(Off)")
 
-        def on_apply_click():
-            value = self.current_theme_selection
-            if value and value != DEFAULT_APPEARANCE_MODE:
-                apply_theme_logic(value)
-            else:
-                 self.show_toast("設定未變更")
+        # 使用自定義 command 來觸發即時置頂
+        _add_item("📌", "視窗最上層顯示", self.var_always_on_top, "若啟用，視窗將會永遠顯示在螢幕最上層。")
+        _add_item("🔔", "通知系統", self.var_notification, "若啟用，下載完成時會發送系統通知。")
+        _add_item("⬇", "自動開始下載", self.var_auto_start, "若啟用，新增任務後會自動開始下載。")
+        
+        # Divider
+        ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")
+        
+        # Update Section
+        update_frame = ctk.CTkFrame(container, fg_color="transparent")
+        update_frame.pack(fill="x", padx=30, pady=20)
+        
+        # Update Item
+        f_upd = ctk.CTkFrame(update_frame, fg_color="transparent")
+        f_upd.pack(fill="x")
+        r_upd = ctk.CTkFrame(f_upd, fg_color="transparent")
+        r_upd.pack(fill="x")
+        ctk.CTkLabel(r_upd, text="🔄", font=("Segoe UI Emoji", 18), width=30).pack(side="left")
+        ctk.CTkLabel(r_upd, text="自動檢查更新", font=("Microsoft JhengHei UI", 15, "bold")).pack(side="left", padx=5)
+        ctk.CTkSwitch(r_upd, text="", variable=self.var_auto_update, command=_save, progress_color="#1F6AA5", button_hover_color="#144870", width=40).pack(side="right")
+        ctk.CTkLabel(f_upd, text="啟動時檢查更新。", font=("Microsoft JhengHei UI", 12), text_color=("gray50", "gray60")).pack(anchor="w", padx=(40, 0), pady=(5,0))
 
-        self.btn_apply = ctk.CTkButton(center_box, text="套用並重啟", 
-                                       font=("Microsoft JhengHei UI", 14, "bold"),
-                                       height=45,
-                                       corner_radius=12,
-                                       fg_color="#1F6AA5", hover_color="#144870",
-                                       command=on_apply_click)
-        self.btn_apply.pack(pady=(0, 40), padx=50, fill="x")
+        # Bottom Divider
+        ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")
 
-        def apply_theme_logic(selected_mode):
-            try:
-                # 1. 讀取 constants.py
-                import constants
-                target_file = constants.__file__
-                
-                with open(target_file, "r", encoding="utf-8") as f:
-                    content = f.read()
-                
-                # 2. Regex 替換 (確保安全)
-                new_line = f'DEFAULT_APPEARANCE_MODE = "{selected_mode}"'
-                # 尋找 DEFAULT_APPEARANCE_MODE = "..." 或 '...'
-                if re.search(r'DEFAULT_APPEARANCE_MODE\s*=\s*["\'].*?["\']', content):
-                    new_content = re.sub(r'DEFAULT_APPEARANCE_MODE\s*=\s*["\'].*?["\']', new_line, content, count=1)
-                    
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        f.write(new_content)
-                                        
-                    # 3. 重啟
+        # Clear Cache
+        reset_frame = ctk.CTkFrame(container, fg_color="transparent")
+        reset_frame.pack(fill="x", padx=30, pady=20)
+        ctk.CTkButton(
+            reset_frame, 
+            text="清理暫存與重置",
+            font=("Microsoft JhengHei UI", 15, "bold"), 
+            fg_color="transparent", 
+            border_width=1,
+            border_color="#D93025",
+            text_color="#D93025",
+            hover_color="#FEE2E2",
+            height=35,
+            command=self.clear_cache_and_reset
+        ).pack(fill="x")
+
+    def clear_cache_and_reset(self):
+        """清理暫存並重啟"""
+        try:
+             import tkinter.messagebox as messagebox
+             if messagebox.askyesno("確認", "確定要刪除設定檔與暫存並重啟嗎？\n(所有偏好設定將會流失)"):
+                if os.path.exists(self.config_file):
+                    os.remove(self.config_file)
+                try:
+                    self.show_toast("正在重啟...", duration=2000)
                     self.after(1000, lambda: self.restart_app())
-                else:
-                    self.show_toast("寫入設定失敗", color="red")
-                    
-            except Exception as e:
-                self.show_toast(f"設定失敗: {e}", color="red")
-                print(e)
+                except: pass
+        except Exception as e:
+             print(f"Clear cache error: {e}")
 
     def restart_app(self):
         """重新啟動應用程式"""

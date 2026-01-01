@@ -35,9 +35,14 @@ class YtDlpCore:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+                thumb = info.get('thumbnail')
+                if not thumb and info.get('thumbnails'):
+                    try: thumb = info['thumbnails'][-1].get('url')
+                    except: pass
+
                 return {
                     'title': info.get('title', '未知標題'),
-                    'thumbnail': info.get('thumbnail'),
+                    'thumbnail': thumb,
                     'duration': info.get('duration_string'),
                     'uploader': info.get('uploader'),
                     'is_live': info.get('is_live', False),

@@ -227,31 +227,7 @@ class TaskLayoutMixin:
             ).pack(side="right", padx=15)
 
             # Mini Thumbnail (Left of Remove Button)
-            if config.get('thumbnail'):
-                thumb_lbl = ctk.CTkLabel(row, text="", width=80, height=45, corner_radius=6, fg_color="gray20")
-                thumb_lbl.pack(side="right", padx=(0, 10))
-                
-                # Fetch Thread
-                def _load_thumb(u, lbl):
-                    try:
-                        resp = requests.get(u, timeout=3)
-                        if resp.status_code == 200:
-                            data = io.BytesIO(resp.content)
-                            pil_img = Image.open(data)
-                            # Resize to h=45
-                            base_h = 45
-                            w_p = (base_h / float(pil_img.size[1]))
-                            w_s = int((float(pil_img.size[0]) * float(w_p)))
-                            c_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w_s, base_h))
-                            
-                            def _update():
-                                if lbl.winfo_exists():
-                                    lbl.configure(image=c_img, width=w_s)
-                                    lbl.image = c_img
-                            lbl.after(0, _update)
-                    except: pass
-                
-                threading.Thread(target=_load_thumb, args=(config['thumbnail'], thumb_lbl), daemon=True).start()
+
 
     def toggle_select_all(self):
         val = self.var_select_all.get()

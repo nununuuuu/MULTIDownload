@@ -191,6 +191,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.active_task_widgets = {}
         self.selected_playlist_data = [] 
         self.pending_playlist_info = None 
+        self.last_fetched_info = None 
         
         # 4. Initialize UI (From Mixins)
         self.setup_sidebar()
@@ -208,12 +209,20 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.setup_settings_ui()
         self.setup_about_ui()
 
+        # --- Pre-load ALL Layouts (Stacking Strategy) ---
+        # 將所有頁面全部 grid 上去並疊加，解決切換閃爍
+        for f_name, f_frame in self.frames.items():
+            f_frame.grid(row=0, column=0, sticky="nsew")
+        
+        # 強制初始排版計算
+        self.update_idletasks()
+
         # --- 6. 建立底部控制區 (From Mixin) ---
         self.setup_bottom_controls()
         
-        # Default view
+        # Default view (此時會將 Basic 移到最上層)
         self.select_frame("Basic")
-
+        
         # Global Click Binding to dismiss focus
         self.bind("<Button-1>", self._bg_click_handler)
         
@@ -237,6 +246,10 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # 啟動自動更新檢查 (延遲 2 秒，避免影響啟動速度)
         self.after(2000, lambda: self.check_app_update(silent=True))
         
+        # 啟動監聽迴圈 (剪貼簿)
+        self.last_clipboard_content = ""
+        self.after(1000, self._monitoring_loop)
+
         # 啟動排程檢查
         self.after(3000, self._scheduler_loop)
 
@@ -328,6 +341,16 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              should_enable = (hw_val != "不使用 (CPU)")
              self.var_hardware_accel.set(should_enable)
 
+        # 8. Extra Settings
+        if hasattr(self, 'var_auto_start'): self.var_auto_start.set(default_config.get("auto_start_tasks", False))
+        if hasattr(self, 'var_clipboard'): self.var_clipboard.set(default_config.get("monitor_clipboard", False))
+        if hasattr(self, 'var_notification'): self.var_notification.set(default_config.get("enable_notification", True))
+        if hasattr(self, 'var_auto_update'): self.var_auto_update.set(default_config.get("auto_update", True))
+        
+        # Theme
+        theme = default_config.get("theme", "System")
+        ctk.set_appearance_mode(theme)
+
     def save_config(self):
         """儲存當前設定到檔案"""
         try:
@@ -358,7 +381,12 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 "proxy": proxy_val,
                 "sponsorblock": self.var_sponsorblock.get() if hasattr(self, 'var_sponsorblock') else False,
                 "sponsor_cats_list": sb_list,
-                "hardware_accel": hw_val
+                "hardware_accel": hw_val,
+                "auto_start_tasks": self.var_auto_start.get() if hasattr(self, 'var_auto_start') else False,
+                "monitor_clipboard": self.var_clipboard.get() if hasattr(self, 'var_clipboard') else False,
+                "enable_notification": self.var_notification.get() if hasattr(self, 'var_notification') else True,
+                "auto_update": self.var_auto_update.get() if hasattr(self, 'var_auto_update') else True,
+                "theme": ctk.get_appearance_mode()
             }
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -470,6 +498,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     
                 elif "Sign in" in err_msg: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
             else:
+                self.last_fetched_info = info
                 # Live Stream Detection Logic
                 if info.get('is_live', False):
                     self.show_toast("偵測到直播", color="#1F6AA5")
@@ -603,6 +632,24 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             'schedule_enabled': self.var_schedule_enable.get() if hasattr(self, 'var_schedule_enable') else False,
             'schedule_time': self.entry_schedule_time.get().strip() if hasattr(self, 'entry_schedule_time') else "00:00",
         }
+
+        # Try to attach cached info (Thumbnail, Title) if URL matches (ignoring query params)
+        def _clean_url(u):
+            if not u: return ""
+            return u.split('?')[0].split('&')[0]
+
+        clean_input_url = _clean_url(url)
+        
+        cached_match = False
+        if self.last_fetched_info:
+            if _clean_url(self.last_fetched_info.get('webpage_url')) == clean_input_url: cached_match = True
+            elif _clean_url(self.last_fetched_info.get('original_url')) == clean_input_url: cached_match = True
+        
+        if cached_match:
+             if 'title' in self.last_fetched_info and not config['filename']:
+                 config['default_title'] = self.last_fetched_info['title']
+
+
         
         return config
 
@@ -699,7 +746,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              threading.Thread(target=self._auto_fetch_title, args=(base_config,), daemon=True).start()
 
         # 加入佇列
-        base_config['manual_start'] = True 
+        base_config['manual_start'] = not self.var_auto_start.get() 
         self.download_queue.append(base_config)
         self.log(f"已加入排程: {base_config['url']}")
         self.update_queue_ui()
@@ -708,11 +755,18 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.show_toast("任務加入成功")
         
         # 清空輸入與重置分析狀態
+        # 強制聚焦再清空，確保 FocusOut 事件能正確觸發 Placeholder 重置
+        try: self.entry_url.focus_set()
+        except: pass
+        
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
+        
         self.clear_subtitle_ui() 
         self.update_thumbnail(None)
-        self.focus() 
+        
+        # 轉移焦點至主視窗
+        self.focus_set() 
 
     def _auto_fetch_title(self, config):
         """Background thread to fetch title for waiting tasks"""
@@ -1109,7 +1163,14 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.progress_bar.configure(mode="determinate")
             self.progress_bar.set(0) 
             self.lbl_status.configure(text="準備就緒")
-            if success: messagebox.showinfo("完成", "所有排程任務已完成！")
+            
+            # Check notification setting
+            should_notify = True
+            if hasattr(self, 'var_notification'):
+                should_notify = self.var_notification.get()
+            
+            if success and should_notify:
+                messagebox.showinfo("完成", "所有排程任務已完成！")
 
     def toggle_pause_task(self, task_id):
         # 排程任務
@@ -1310,6 +1371,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
     def check_app_update(self, silent=False):
         """檢查 App 是否有新版本 (GitHub Releases, 優先支援 Zip 全量更新)"""
+        if silent and hasattr(self, 'var_auto_update') and not self.var_auto_update.get():
+            return
         try:
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             
@@ -1482,6 +1545,32 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         # self.log(f"發現 yt-dlp 新版本 {version}，請至「設定」更新。") # 保持日誌乾淨可不加
 
 
+
+
+
+    def _monitoring_loop(self):
+        """背景監聽迴圈 (剪貼簿與輸入監聽)"""
+        try:
+            # 1. 剪貼簿監聽
+            if hasattr(self, 'var_clipboard') and self.var_clipboard.get():
+                # [FIX] 增加焦點判斷：只有當程式有焦點(在使用中)時才偵測
+                if self.focus_get():
+                    try:
+                        content = self.clipboard_get()
+                        if content != self.last_clipboard_content:
+                            self.last_clipboard_content = content
+                            if any(x in content for x in ["http://", "https://", "youtu", "bilibili"]):
+                                if content != self.entry_url.get():
+                                    self.entry_url.delete(0, "end")
+                                    self.entry_url.insert(0, content)
+                                    self.show_toast("📋 已偵測並填入剪貼簿連結")
+                                    self.after(500, self.on_fetch_info)
+                    except: pass
+
+        except: pass
+        
+        # Loop
+        self.after(1500, self._monitoring_loop)
 
 if __name__ == "__main__":
     app = App()

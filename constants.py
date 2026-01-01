@@ -3,7 +3,7 @@ import os
 import sys
 import json
 
-APP_VERSION = "2025.12.29"
+APP_VERSION = "2025.12.31"
 GITHUB_REPO = "nununuuuu/MULTIDownload"
 DEFAULT_APPEARANCE_MODE = "System"
 
