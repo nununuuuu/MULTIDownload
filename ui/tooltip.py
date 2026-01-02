@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import sys
 
 class CTkToolTip(ctk.CTkToplevel):
     def __init__(self, widget, text, delay=200):
@@ -7,6 +8,7 @@ class CTkToolTip(ctk.CTkToplevel):
         self.delay = delay
         self._after_id = None
         self._tip_window = None
+        self.font_family = "Microsoft JhengHei UI" if sys.platform.startswith("win") else "PingFang TC"
         
         self.widget.bind("<Enter>", self._schedule, add="+")
         self.widget.bind("<Leave>", self._unschedule, add="+")
@@ -47,7 +49,7 @@ class CTkToolTip(ctk.CTkToplevel):
                              fg_color=("#2B2B2B", "#F2F2F2"), 
                              text_color=("#E0E0E0", "#202020"), 
                              padx=10, pady=5,
-                             font=("Microsoft JhengHei UI", 12))
+                             font=(self.font_family, 12))
         label.pack()
 
     def _hide(self, event=None):

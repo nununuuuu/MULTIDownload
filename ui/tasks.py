@@ -29,7 +29,7 @@ class TaskLayoutMixin:
             self.nav_frame, 
             values=["等待中", "進行中", "已完成"], 
             command=self.switch_task_view,
-            font=("Microsoft JhengHei UI", 14, "bold"),
+            font=(self.font_family, 14, "bold"),
             height=42, 
             width=520, 
             corner_radius=21,
@@ -44,7 +44,7 @@ class TaskLayoutMixin:
             self.nav_frame, text="🗑 清除紀錄", width=100, height=32,
             fg_color="transparent", border_width=1, border_color=("gray70", "gray50"), 
             text_color=("gray20", "gray80"), hover_color=("gray90", "gray30"), 
-            font=("Microsoft JhengHei UI", 13, "bold"), command=self.clear_history
+            font=(self.font_family, 13, "bold"), command=self.clear_history
         )
         
         # 3. 內容容器 (Content Container)
@@ -170,17 +170,22 @@ class TaskLayoutMixin:
             chk_all.pack(side="left", padx=5)
             
             # Download Selected Button
-            ctk.CTkButton(
-                ctrl_frame, text="開始下載選取項目", fg_color="#01814A", hover_color="#006030", font=self.font_btn,
-                height=32, corner_radius=16,
+            self.btn_download_selected = ctk.CTkButton(
+                ctrl_frame, text="下載選取項目", fg_color="#01814A", hover_color="#006030", 
+                font=("Microsoft JhengHei UI", 15, "bold"),
+                height=30, corner_radius=20, state="disabled",
                 command=self.start_selected_queue
-            ).pack(side="right", padx=5)
+            )
+            self.btn_download_selected.pack(side="left", padx=(15, 5))
+            
+            # Initial state check
+            self.after(50, self.update_select_all_state)
         
         for i, config in enumerate(self.download_queue):
             # Card Style
-            row = ctk.CTkFrame(self.view_waiting, fg_color=("white", "#2B2B2B"), corner_radius=12,
+            row = ctk.CTkFrame(self.view_waiting, fg_color=("white", "#2B2B2B"), corner_radius=8,
                                border_width=1, border_color=("gray85", "#3A3A3A"))
-            row.pack(fill="x", pady=6, padx=10)
+            row.pack(fill="x", pady=4, padx=10)
             
             # Checkbox
             var = ctk.BooleanVar(value=False)
@@ -190,7 +195,7 @@ class TaskLayoutMixin:
             
             # Info Frame
             info_frame = ctk.CTkFrame(row, fg_color="transparent")
-            info_frame.pack(side="left", fill="x", expand=True, padx=5, pady=12)
+            info_frame.pack(side="left", fill="x", expand=True, padx=5, pady=8)
             
             # Determine Display Name & Mode
             display_name = config.get('filename')
@@ -206,25 +211,47 @@ class TaskLayoutMixin:
             
             if len(display_name) > 60: display_name = display_name[:57] + "..."
             
+            # [UX Improvement] 讓整個卡片都可以點擊選取
+            def _toggle_row(event=None):
+                new_val = not var.get()
+                var.set(new_val)
+                self.update_select_all_state()
+            
+            row.bind("<Button-1>", _toggle_row)
+            info_frame.bind("<Button-1>", _toggle_row)
+
             # Title
-            ctk.CTkLabel(info_frame, text=display_name, font=("Microsoft JhengHei UI", 13, "bold"), anchor="w", text_color=("#1F6AA5", "#3B8ED0")).pack(fill="x")
+            lbl_title = ctk.CTkLabel(info_frame, text=display_name, font=(self.font_family, 13, "bold"), anchor="w", text_color=("#1F6AA5", "#3B8ED0"))
+            lbl_title.pack(fill="x")
+            lbl_title.bind("<Button-1>", _toggle_row)
             
             # URL (Show only if different from display_name AND didn't fallback to URL)
             if config['url'] != display_name and not is_using_url_as_title:
                 url_text = config['url']
                 if len(url_text) > 80: url_text = url_text[:77] + "..."
-                ctk.CTkLabel(info_frame, text=url_text, text_color="gray", font=("Consolas", 11), anchor="w").pack(fill="x", pady=(2, 0))
+                lbl_url = ctk.CTkLabel(info_frame, text=url_text, text_color="gray", font=("Consolas", 10), anchor="w", height=14)
+                lbl_url.pack(fill="x", pady=4)
+                lbl_url.bind("<Button-1>", _toggle_row)
             
             # Meta Badges
             details_text = self._generate_meta_text(config)
-            ctk.CTkLabel(info_frame, text=details_text, text_color=("gray40", "gray60"), font=self.font_small, anchor="w").pack(fill="x", pady=(5, 0))
+            lbl_meta = ctk.CTkLabel(info_frame, text=details_text, text_color=("gray40", "gray60"), font=self.font_small, anchor="w", height=14)
+            lbl_meta.pack(fill="x", pady=0)
+            lbl_meta.bind("<Button-1>", _toggle_row)
 
             # Remove Button
             ctk.CTkButton(
-                row, text="✕", width=36, height=36, fg_color="transparent", hover_color=("#FFEEEE", "#440000"), text_color="red", 
+                row, text="✘", width=36, height=36, fg_color="transparent", hover_color=("#FFEEEE", "#440000"), text_color="red", 
                 font=("Arial", 16), corner_radius=18,
                 command=lambda idx=i: self.remove_from_queue(idx)
-            ).pack(side="right", padx=15)
+            ).pack(side="right", padx=(5, 15))
+
+            # Single Download Button
+            ctk.CTkButton(
+                row, text="⭣", width=36, height=36, fg_color="transparent", hover_color=("#E5F9E7", "#1B5E20"), text_color="#2E7D32", 
+                font=("Arial", 18, "bold"), corner_radius=18,
+                command=lambda idx=i: self.start_single_task(idx)
+            ).pack(side="right", padx=0)
 
             # Mini Thumbnail (Left of Remove Button)
 
@@ -233,16 +260,35 @@ class TaskLayoutMixin:
         val = self.var_select_all.get()
         for var in self.queue_vars:
             var.set(val)
+        self.update_select_all_state()
 
     def update_select_all_state(self):
         if not self.queue_vars: return
+        
+        # 1. Update Select All Checkbox
         all_checked = all(var.get() for var in self.queue_vars)
         self.var_select_all.set(all_checked)
+        
+        # 2. Update Download Button State
+        selected_count = sum(1 for var in self.queue_vars if var.get())
+        
+        if hasattr(self, 'btn_download_selected'):
+            if selected_count > 0:
+                self.btn_download_selected.configure(
+                    state="normal", 
+                    fg_color="#01814A",
+                    text=f"下載選取項目 （{selected_count}）"
+                )
+            else:
+                self.btn_download_selected.configure(
+                    state="disabled", 
+                    fg_color="gray",
+                    text="下載選取項目"
+                )
 
     def start_selected_queue(self):
         indices = [i for i, var in enumerate(self.queue_vars) if var.get()]
-        if not indices:
-            return messagebox.showwarning("提示", "請先勾選要下載的任務")
+        if not indices: return
             
         indices.sort(reverse=True)
         
@@ -253,6 +299,13 @@ class TaskLayoutMixin:
         
         self.update_queue_ui()
 
+    def start_single_task(self, index):
+        """立即下載單個項目"""
+        if 0 <= index < len(self.download_queue):
+            config = self.download_queue.pop(index)
+            self._start_core_download(config)
+            self.update_queue_ui()
+
     def remove_from_queue(self, index):
         """從排程中移除任務"""
         if 0 <= index < len(self.download_queue):
@@ -262,9 +315,9 @@ class TaskLayoutMixin:
 
     def create_active_task_widget(self, task_id, config, initial_status="準備中..."):
         # Card style
-        row = ctk.CTkFrame(self.view_active, fg_color=("white", "#2B2B2B"), corner_radius=12,
+        row = ctk.CTkFrame(self.view_active, fg_color=("white", "#2B2B2B"), corner_radius=8,
                            border_width=1, border_color=("gray85", "#3A3A3A"))
-        row.pack(fill="x", pady=6, padx=10)
+        row.pack(fill="x", pady=4, padx=10)
         
         self.lbl_active_empty.place_forget()
         self.active_task_widgets[task_id] = {'frame': row}
@@ -272,7 +325,7 @@ class TaskLayoutMixin:
         self.active_task_widgets[task_id] = {'frame': row}
 
         # 1. Right Side: Cancel Button (Fixed)
-        btn_cancel = ctk.CTkButton(row, text="✕", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#440000"),
+        btn_cancel = ctk.CTkButton(row, text="✘", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#440000"),
                                    font=("Arial", 16), corner_radius=18,
                                    command=lambda: self.cancel_task(task_id))
         btn_cancel.pack(side="right", padx=(5, 10))
@@ -283,7 +336,7 @@ class TaskLayoutMixin:
         status_frame.pack(side="right", padx=5, pady=6)
         
         # Status Text
-        lbl_stat = ctk.CTkLabel(status_frame, text=initial_status, font=("Microsoft JhengHei UI", 14, "bold"), text_color="#24A36C", anchor="e")
+        lbl_stat = ctk.CTkLabel(status_frame, text=initial_status, font=(self.font_family, 14, "bold"), text_color="#24A36C", anchor="e")
         lbl_stat.pack(anchor="e")
         self.active_task_widgets[task_id]['status_label'] = lbl_stat
         
@@ -294,7 +347,7 @@ class TaskLayoutMixin:
 
         # 3. Main Info (Left - Expands to fill remaining space)
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
-        info_frame.pack(side="left", fill="both", expand=True, padx=15, pady=12)
+        info_frame.pack(side="left", fill="both", expand=True, padx=15, pady=8)
         
         # Determine Title
         title = config.get('filename')
@@ -303,7 +356,7 @@ class TaskLayoutMixin:
         if len(title) > 55: title = title[:52] + "..."
         
         # Title Label
-        lbl_title = ctk.CTkLabel(info_frame, text=title, font=("Microsoft JhengHei UI", 13, "bold"), anchor="w", text_color=("#1F6AA5", "#3B8ED0"))
+        lbl_title = ctk.CTkLabel(info_frame, text=title, font=(self.font_family, 13, "bold"), anchor="w", text_color=("#1F6AA5", "#3B8ED0"))
         lbl_title.pack(fill="x")
         self.active_task_widgets[task_id]['title_label'] = lbl_title
         
@@ -384,9 +437,9 @@ class TaskLayoutMixin:
         self.lbl_finished_empty.place_forget()
         
         # Card
-        row = ctk.CTkFrame(self.view_finished, fg_color=("white", "#2B2B2B"), corner_radius=12,
+        row = ctk.CTkFrame(self.view_finished, fg_color=("white", "#2B2B2B"), corner_radius=8,
                            border_width=1, border_color=("gray85", "#3A3A3A"))
-        row.pack(fill="x", pady=6, padx=10)
+        row.pack(fill="x", pady=4, padx=10)
         
         # Determine Color
         status_color = "#01814A" if success else "#DB3E39"
@@ -397,7 +450,7 @@ class TaskLayoutMixin:
         
         # Info
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
-        info_frame.pack(side="left", fill="both", expand=True, pady=12)
+        info_frame.pack(side="left", fill="both", expand=True, pady=8)
         
         # Title
         display_name = config.get('filename')
@@ -407,13 +460,13 @@ class TaskLayoutMixin:
             else: display_name = config['url']
         
         if len(display_name) > 60: display_name = display_name[:57] + "..."
-        ctk.CTkLabel(info_frame, text=display_name, font=("Microsoft JhengHei UI", 13, "bold"), anchor="w").pack(fill="x")
+        ctk.CTkLabel(info_frame, text=display_name, font=(self.font_family, 13, "bold"), anchor="w").pack(fill="x")
         
         # URL
         if config['url'] != display_name:
             url_text = config['url']
             if len(url_text) > 80: url_text = url_text[:77] + "..."
-            ctk.CTkLabel(info_frame, text=url_text, text_color="gray", font=("Consolas", 11), anchor="w").pack(fill="x", pady=(2, 0))
+            ctk.CTkLabel(info_frame, text=url_text, text_color="gray", font=("Consolas", 10), anchor="w", height=14).pack(fill="x", pady=0)
 
         # Details / Error Msg
         if success:
@@ -423,7 +476,7 @@ class TaskLayoutMixin:
 
         # Use simple color for details, red for error if fail
         detail_color = ("gray50", "gray70") if success else "#DB3E39"
-        ctk.CTkLabel(info_frame, text=details_text, text_color=detail_color, font=self.font_small, anchor="w").pack(fill="x", pady=(5, 0))
+        ctk.CTkLabel(info_frame, text=details_text, text_color=detail_color, font=self.font_small, anchor="w", height=14).pack(fill="x", pady=0)
 
         # Action Buttons
         action_frame = ctk.CTkFrame(row, fg_color="transparent")
@@ -434,5 +487,5 @@ class TaskLayoutMixin:
              ctk.CTkButton(action_frame, text="開啟", width=60, height=30, font=self.font_small, fg_color=("gray90", "gray30"), text_color=("black", "white"), hover_color=("gray80", "gray40"),
                            command=lambda p=save_path: self.safe_open_path(p)).pack(side="left", padx=5)
         
-        ctk.CTkButton(action_frame, text="✕", width=30, height=30, fg_color="transparent", text_color="gray", hover_color=("#FFEEEE", "#440000"),
+        ctk.CTkButton(action_frame, text="✘", width=30, height=30, fg_color="transparent", text_color="gray", hover_color=("#FFEEEE", "#440000"),
                       command=lambda w=row: w.destroy()).pack(side="left", padx=5)

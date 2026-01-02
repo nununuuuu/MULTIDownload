@@ -290,7 +290,7 @@ class AppLayoutMixin:
             if hasattr(self, 'save_config'): self.save_config()
 
         self.switch_hw = ctk.CTkSwitch(hw_frame, text="硬體加速:偵測中...", variable=self.var_hardware_accel,
-                                       font=("Microsoft JhengHei UI", 12, "bold"), text_color="gray60",
+                                       font=(self.font_family, 12, "bold"), text_color="gray60",
                                        progress_color="#2CC985", button_hover_color="#20A068",
                                        state="disabled", command=on_hw_toggle)
         self.switch_hw.pack(anchor="w")
@@ -323,10 +323,10 @@ class AppLayoutMixin:
         self.info_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent")
         self.info_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", pady=10, padx=(0, 10))
         
-        self.lbl_preview_title = ctk.CTkLabel(self.info_frame, text="標題載入中...", font=("Microsoft JhengHei UI", 14, "bold"), anchor="w", justify="left", wraplength=500, text_color=("#1F6AA5", "#3B8ED0"))
+        self.lbl_preview_title = ctk.CTkLabel(self.info_frame, text="標題載入中...", font=(self.font_family, 14, "bold"), anchor="w", justify="left", wraplength=500, text_color=("#1F6AA5", "#3B8ED0"))
         self.lbl_preview_title.pack(fill="x")
         
-        self.lbl_preview_meta = ctk.CTkLabel(self.info_frame, text="--:-- • --", font=("Microsoft JhengHei UI", 12), text_color="gray", anchor="w")
+        self.lbl_preview_meta = ctk.CTkLabel(self.info_frame, text="--:-- • --", font=(self.font_family, 12), text_color="gray", anchor="w")
         self.lbl_preview_meta.pack(fill="x", pady=(2, 0))
 
         # --- 1. Search Section ---
@@ -355,7 +355,7 @@ class AppLayoutMixin:
         CTkToolTip(btn_paste, "貼上並自動分析網址")
 
         # 3. URL Entry (Fills remaining space)
-        self.entry_url = ctk.CTkEntry(input_bar, width=450, height=50, font=("Microsoft JhengHei UI", 16), 
+        self.entry_url = ctk.CTkEntry(input_bar, width=450, height=50, font=(self.font_family, 16), 
                                       placeholder_text="貼上影片連結...", 
                                       fg_color="transparent", border_width=0, text_color=("gray20", "white"))
         self.entry_url.pack(side="left", padx=15, fill="x", expand=True)
@@ -382,7 +382,7 @@ class AppLayoutMixin:
         header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         
         ctk.CTkFrame(header_frame, width=4, height=18, fg_color="#1F6AA5", corner_radius=2).pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header_frame, text="快速設定 (Quick Settings)", font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+        ctk.CTkLabel(header_frame, text="快速設定 (Quick Settings)", font=(self.font_family, 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
 
         # Timestamp Switch (Header Right)
         if not hasattr(self, 'var_add_timestamp'): self.var_add_timestamp = ctk.BooleanVar(value=False)
@@ -491,7 +491,7 @@ class AppLayoutMixin:
             header.pack(fill="x", padx=20, pady=(15, 10))
             
             ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 20)).pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+            ctk.CTkLabel(header, text=title, font=(self.font_family, 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
             
             content = ctk.CTkFrame(frame, fg_color="transparent")
             content.pack(fill="both", expand=True, padx=20, pady=(0, 20))
@@ -513,7 +513,7 @@ class AppLayoutMixin:
         self.combo_video_res.pack(fill="x", pady=(0, 15))
         
         self.chk_legacy = ctk.CTkSwitch(video_content, text="使用 H.264 編碼 (高相容性)", variable=self.var_video_legacy, 
-                                        font=("Microsoft JhengHei UI", 13), progress_color="#2CC985", button_hover_color="#20A068", command=self.update_dynamic_hint)
+                                        font=(self.font_family, 13), progress_color="#2CC985", button_hover_color="#20A068", command=self.update_dynamic_hint)
         self.chk_legacy.pack(anchor="w", pady=(5, 15))
         CTkToolTip(self.chk_legacy, "若您的播放裝置較舊，請開啟此選項。\n注意：最高畫質通常限制為 1080p。")
 
@@ -530,7 +530,7 @@ class AppLayoutMixin:
                                                    variable=self.var_audio_codec, command=lambda _: self.update_dynamic_hint(), width=200, **opt_style)
         self.combo_audio_codec.pack(fill="x", pady=(0, 15))
         
-        self.lbl_format_hint = ctk.CTkLabel(audio_content, text="提示：若車用音響無聲音，請在「音訊編碼」選擇 AAC", font=("Microsoft JhengHei UI", 12), text_color="#1F6AA5", wraplength=250)
+        self.lbl_format_hint = ctk.CTkLabel(audio_content, text="提示：若車用音響無聲音，請在「音訊編碼」選擇 AAC", font=(self.font_family, 12), text_color="#1F6AA5", wraplength=250)
         self.lbl_format_hint.pack(pady=(10, 0))
 
         # --- Card 3: Post Processing ---
@@ -540,7 +540,7 @@ class AppLayoutMixin:
         
         def create_switch(parent, text, var, r, c, tooltip=None):
             # 使用 CTkSwitch 取代 CheckBox
-            sw = ctk.CTkSwitch(parent, text=text, variable=var, font=("Microsoft JhengHei UI", 13), 
+            sw = ctk.CTkSwitch(parent, text=text, variable=var, font=(self.font_family, 13), 
                                progress_color="#2CC985", button_hover_color="#20A068")
             sw.grid(row=r, column=c, sticky="w", padx=20, pady=12)
             if tooltip: CTkToolTip(sw, tooltip)
@@ -592,7 +592,7 @@ class AppLayoutMixin:
             y = self.winfo_y() + (self.winfo_height() // 2) - 300
             top.geometry(f"+{x}+{y}")
             
-            ctk.CTkLabel(top, text="請勾選要【刪除】的片段類型", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(pady=15)
+            ctk.CTkLabel(top, text="請勾選要【刪除】的片段類型", font=(self.font_family, 14, "bold"), text_color="#1F6AA5").pack(pady=15)
             
             chk_frame = ctk.CTkScrollableFrame(top, fg_color="transparent") 
             chk_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
@@ -615,11 +615,11 @@ class AppLayoutMixin:
                 item_frame = ctk.CTkFrame(chk_frame, fg_color="transparent")
                 item_frame.pack(fill="x", pady=8)
                 
-                cb = ctk.CTkCheckBox(item_frame, text=text, variable=var, font=("Microsoft JhengHei UI", 13, "bold"))
+                cb = ctk.CTkCheckBox(item_frame, text=text, variable=var, font=(self.font_family, 13, "bold"))
                 cb.pack(anchor="w")
                 
                 desc = sb_descriptions.get(key, "")
-                ctk.CTkLabel(item_frame, text=desc, font=("Microsoft JhengHei UI", 11), text_color=("gray50", "gray70")).pack(anchor="w", padx=(30, 0))
+                ctk.CTkLabel(item_frame, text=desc, font=(self.font_family, 11), text_color=("gray50", "gray70")).pack(anchor="w", padx=(30, 0))
                 
             ctk.CTkButton(top, text="確定", command=top.destroy, width=120, height=35).pack(pady=10)
 
@@ -628,13 +628,13 @@ class AppLayoutMixin:
             self.btn_sb_config.configure(state=state)
 
         sb_sw = ctk.CTkSwitch(sb_frame, text="啟用 SponsorBlock", variable=self.var_sponsorblock, 
-                              font=("Microsoft JhengHei UI", 13), progress_color="#2CC985", button_hover_color="#20A068",
+                              font=(self.font_family, 13), progress_color="#2CC985", button_hover_color="#20A068",
                               command=on_sb_toggle)
         sb_sw.pack(side="left")
 
         self.btn_sb_config = ctk.CTkButton(sb_frame, text="⚙ 設定過濾類別", 
                                            width=140, height=28,
-                                           font=("Microsoft JhengHei UI", 12),
+                                           font=(self.font_family, 12),
                                            fg_color=("#3E3E3E", "gray30"), 
                                            hover_color=("#505050", "gray40"),
                                            command=open_sb_settings)
@@ -661,7 +661,7 @@ class AppLayoutMixin:
         center_box.grid_columnconfigure(0, weight=1)
 
         # Title
-        ctk.CTkLabel(center_box, text="直播錄製設定 (Live Stream Settings)", font=("Microsoft JhengHei UI", 18, "bold"), text_color=("gray20", "gray80")).pack(pady=(0, 25))
+        ctk.CTkLabel(center_box, text="直播錄製設定 (Live Stream Settings)", font=(self.font_family, 18, "bold"), text_color=("gray20", "gray80")).pack(pady=(0, 25))
 
         # --- Helper for Cards (Standard Style) ---
         def create_live_card(parent, title, icon="⚙️"):
@@ -674,7 +674,7 @@ class AppLayoutMixin:
             
             # Icon & Title
             ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 18)).pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
+            ctk.CTkLabel(header, text=title, font=(self.font_family, 16, "bold"), text_color=("gray20", "gray90")).pack(side="left")
             
             # Content
             content = ctk.CTkFrame(card, fg_color="transparent")
@@ -689,7 +689,7 @@ class AppLayoutMixin:
         wait_content = create_live_card(center_box, "智慧等待 (Smart Wait)", icon="📡")
         
         s_wait = ctk.CTkSwitch(wait_content, text="啟用等待開台 (Wait for Stream)", variable=self.var_live_wait, 
-                               font=("Microsoft JhengHei UI", 13, "bold"), progress_color="#2CC985", height=32)
+                               font=(self.font_family, 13, "bold"), progress_color="#2CC985", height=32)
         s_wait.pack(anchor="w", padx=10, pady=8)
         CTkToolTip(s_wait, "僅對直播連結有效。\n若直播尚未開始，程式將持續監控直到開播。")
         
@@ -697,7 +697,7 @@ class AppLayoutMixin:
         rec_content = create_live_card(center_box, "錄製策略 (Recording Strategy)", icon="📼")
         
         s_rec = ctk.CTkSwitch(rec_content, text="嘗試從頭下載 (Live from Start)", variable=self.var_live_from_start,
-                              font=("Microsoft JhengHei UI", 13, "bold"), progress_color="#2CC985", button_hover_color="#20A068", height=32)
+                              font=(self.font_family, 13, "bold"), progress_color="#2CC985", button_hover_color="#20A068", height=32)
         s_rec.pack(anchor="w", padx=10, pady=8)
         CTkToolTip(s_rec, "僅對直播連結有效。\n若您在直播中途才開始錄製，嘗試抓取錯過的開頭片段。")
 
@@ -705,7 +705,7 @@ class AppLayoutMixin:
         note_box = ctk.CTkFrame(center_box, fg_color="transparent")
         note_box.pack(pady=20)
         ctk.CTkLabel(note_box, text="提示：開啟「等待開台」後，任務狀態會顯示為「下載中」，但在開播前沒有進度條變化屬正常現象。", 
-                     text_color="#1F6AA5", font=("Microsoft JhengHei UI", 12)).pack()
+                     text_color=("#1F6AA5", "#88C0D0"), font=(self.font_family, 12)).pack()
 
     def update_dynamic_hint(self):
         choice = self.combo_format.get()
@@ -740,7 +740,7 @@ class AppLayoutMixin:
         if "Best" not in qual and "無損" not in choice:
              hint += "\n(注意：在無更高品質時，強制設定位元率只會增加檔案大小無法提升原始音質)"
 
-        self.lbl_format_hint.configure(text=hint)
+        self.lbl_format_hint.configure(text=hint,text_color=("#1F6AA5", "#88C0D0"))
 
     def on_format_change(self, choice):
         # 1. 無損音訊 (flac/wav) -> 鎖定畫質與編碼 (不建議轉碼)
@@ -852,7 +852,7 @@ class AppLayoutMixin:
         self.entry_sub_manual = ctk.CTkEntry(manual_bg, width=120, placeholder_text="代碼 (如: th, vi)", state="disabled")
         self.entry_sub_manual.pack(side="left", padx=(0, 5))
         
-        ctk.CTkLabel(manual_bg, text="用逗號或空白分隔", text_color="#1F6AA5", font=self.font_small).pack(side="left", padx=5)
+        ctk.CTkLabel(manual_bg, text="用逗號或空白分隔", text_color=("#1F6AA5", "#88C0D0"), font=self.font_small).pack(side="left", padx=5)
         
         ctk.CTkButton(manual_bg, text="查詢代碼表", width=80, height=24, fg_color="#555555", font=("Microsoft JhengHei UI", 12), command=self.open_lang_table).pack(side="left", padx=10)
 
@@ -1004,7 +1004,7 @@ class AppLayoutMixin:
             if not items: return
             
             # Header (Span 2 cols)
-            header = ctk.CTkLabel(self.scroll_subs, text=title, font=("Microsoft JhengHei UI", 13, "bold"), text_color="#1F6AA5")
+            header = ctk.CTkLabel(self.scroll_subs, text=title, font=("Microsoft JhengHei UI", 13, "bold"), text_color=("#1F6AA5", "#88C0D0"))
             header.grid(row=row_idx, column=0, columnspan=2, sticky="w", pady=(10, 5), padx=5)
             row_idx += 1
             
@@ -1277,34 +1277,89 @@ class AppLayoutMixin:
         
         if not hasattr(self, 'var_after_completion'): self.var_after_completion = ctk.StringVar(value="none")
         
-        # UI Mapping
-        self.after_act_map = {"保持開啟 (None)": "none", "進入睡眠 (Sleep)": "sleep", "自動關機 (Shutdown)": "shutdown"}
-        self.after_act_rev = {v: k for k, v in self.after_act_map.items()}
+        # Custom Segmented Control Container
+        seg_bg = ctk.CTkFrame(after_card, fg_color=("gray90", "#1C1C1C"), corner_radius=12)
+        seg_bg.pack(fill="x", padx=20, pady=10)
         
-        def on_after_act_change(val):
-            code = self.after_act_map.get(val, "none")
+        # Options Data: (Title, Value, Icon)
+        self.after_opts = [
+            ("保持開啟", "none", "☀"), 
+            ("進入睡眠", "sleep", "🌙"), 
+            ("自動關機", "shutdown", "🔌")
+        ]
+        
+        self.after_btns = {}
+
+        def update_after_visuals():
+            current = self.var_after_completion.get()
+            for title, code, icon in self.after_opts:
+                btn = self.after_btns.get(code)
+                if not btn: continue
+                
+                if code == current:
+                    # Selected: "Floating" look (White/Lighter bg + Color Text)
+                    btn.configure(
+                        fg_color=("white", "#5A5A5A"), 
+                        text_color=("#1F6AA5", "#88C0D0"),
+                        border_color=("#1F6AA5", "#88C0D0"),
+                        border_width=2
+                    )
+                else:
+                    # Unselected: Flat Transparent
+                    btn.configure(
+                        fg_color="transparent", 
+                        text_color=("gray50", "gray70"),
+                        border_width=0
+                    )
+
+        def on_after_click(code):
             self.var_after_completion.set(code)
+            update_after_visuals()
             
-            hint = "執行完畢後保持電腦開啟。"
-            if code == "sleep": hint = "所有任務完成後 (佇列清空)，倒數 60 秒進入睡眠模式。"
-            elif code == "shutdown": hint = "所有任務完成後 (佇列清空)，倒數 60 秒自動關機。"
+            # Update Hint
+            hint = "執行完畢後保持電腦開啟"
+            if code == "sleep": hint = "所有任務完成後 (佇列清空)，倒數 60 秒進入睡眠模式"
+            elif code == "shutdown": hint = "所有任務完成後 (佇列清空)，倒數 60 秒自動關機"
             
-            self.lbl_after_hint.configure(text=f"💡 {hint}")
-            
+            self.lbl_after_hint.configure(text=f"{hint}", text_color=("#1F6AA5", "#88C0D0"))
             if hasattr(self, 'check_queue'): self.check_queue()
 
-        seg_act = ctk.CTkSegmentedButton(after_card, values=list(self.after_act_map.keys()),
-                                         command=on_after_act_change,
-                                         font=("Microsoft JhengHei UI", 13, "bold"), height=35)
-        seg_act.pack(fill="x", padx=20, pady=10)
+        # Create Buttons Grid
+        seg_bg.grid_columnconfigure(0, weight=1)
+        seg_bg.grid_columnconfigure(1, weight=1)
+        seg_bg.grid_columnconfigure(2, weight=1)
         
-        cur_val = self.var_after_completion.get()
-        seg_act.set(self.after_act_rev.get(cur_val, list(self.after_act_map.keys())[0]))
-        
-        self.lbl_after_hint = ctk.CTkLabel(after_card, text="💡 執行完畢後保持電腦開啟。", text_color="gray", font=("Microsoft JhengHei UI", 11))
+        for i, (title, code, icon) in enumerate(self.after_opts):
+            # Using \n for vertical stacking of Icon and Text
+            btn_text = f"{icon}\n{title}"
+            
+            btn = ctk.CTkButton(
+                seg_bg, 
+                text=btn_text,
+                font=("Microsoft JhengHei UI", 13, "bold"),
+                width=100, height=50,
+                corner_radius=10,
+                fg_color="transparent",
+                hover_color=("white", "#404040"),
+                command=lambda c=code: on_after_click(c)
+            )
+            btn.grid(row=0, column=i, padx=5, pady=5, sticky="ew")
+            
+            # Tweak font for the Icon line if possible (TKinter limitation: one font per widget). 
+            # We'll stick to a robust font size.
+            
+            self.after_btns[code] = btn
+
+        # Hint Label
+        self.lbl_after_hint = ctk.CTkLabel(after_card, text="執行完畢後保持電腦開啟。", text_color=("#1F6AA5", "#88C0D0"), font=("Microsoft JhengHei UI", 12))
         self.lbl_after_hint.pack(padx=20, pady=(0, 15), anchor="w")
         
-        on_after_act_change(seg_act.get())
+        # Init State
+        # Ensure default valid
+        if self.var_after_completion.get() not in [x[1] for x in self.after_opts]:
+             self.var_after_completion.set("none")
+             
+        on_after_click(self.var_after_completion.get())
 
     def setup_advanced_ui(self):
         # 建立捲動區域以容納更多設定
@@ -1670,7 +1725,7 @@ class AppLayoutMixin:
         toolbar.pack(fill="x", padx=10, pady=(15, 5))
         
         # Title with Icon
-        ctk.CTkLabel(toolbar, text="💻 運行日誌 (Console)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="#1F6AA5").pack(side="left", padx=5)
+        ctk.CTkLabel(toolbar, text="💻 運行日誌 (Console)", font=("Microsoft JhengHei UI", 14, "bold"), text_color=("#1F6AA5", "#88C0D0")).pack(side="left", padx=5)
         
         # Helper functions
         def copy_logs():
@@ -1756,7 +1811,7 @@ class AppLayoutMixin:
         self.settings_scroll.pack(fill="both", expand=True)
 
         # Main Container
-        container = ctk.CTkFrame(self.settings_scroll, fg_color=("white", "#333333"), corner_radius=12)
+        container = ctk.CTkFrame(self.settings_scroll, fg_color=("gray95", "gray20"), corner_radius=12)
         container.pack(fill="x", padx=20, pady=20)
         
         # --- 1. Top Section ---
@@ -1766,17 +1821,78 @@ class AppLayoutMixin:
         
         # Theme Row
         ctk.CTkLabel(top_frame, text="🌗", font=("Segoe UI Emoji", 18)).grid(row=0, column=0, sticky="w", padx=(0, 10))
-        ctk.CTkLabel(top_frame, text="主題", font=("Microsoft JhengHei UI", 15, "bold")).grid(row=0, column=0, sticky="w", padx=(35, 0))
+        ctk.CTkLabel(top_frame, text="主題設定", font=("Microsoft JhengHei UI", 15, "bold")).grid(row=0, column=0, sticky="w", padx=(35, 0))
         
-        self.option_theme = ctk.CTkOptionMenu(
-            top_frame, values=["System", "Light", "Dark"], 
-            command=self.change_appearance_mode_event,
-            width=140, height=32,
-            fg_color=("gray90", "gray30"), text_color=("black", "white"),
-            button_color=("gray80", "gray40"), button_hover_color=("gray75", "gray35")
-        )
-        self.option_theme.grid(row=0, column=1, sticky="e")
-        self.option_theme.set(ctk.get_appearance_mode())
+        # Theme Custom Segmented Control
+        theme_seg_bg = ctk.CTkFrame(top_frame, fg_color=("gray90", "#1C1C1C"), corner_radius=10, height=45) 
+        theme_seg_bg.grid(row=0, column=1, sticky="e")
+        
+        self.theme_opts = [
+            ("跟隨系統", "System", "💻"), 
+            ("淺色", "Light", "☀"), 
+            ("深色", "Dark", "☾")
+        ]
+        self.theme_btns = {}
+
+        def update_theme_visuals():
+            current = ctk.get_appearance_mode() 
+            pass
+
+        def on_theme_click(mode_name):
+            self.change_appearance_mode_event(mode_name)
+            # Manually update visuals
+            for title, code, icon in self.theme_opts:
+                btn = self.theme_btns.get(code)
+                if not btn: continue
+                
+                if code == mode_name:
+                    btn.configure(
+                        fg_color=("white", "#5A5A5A"), 
+                        text_color=("#1F6AA5", "#88C0D0"),
+                        border_color=("#1F6AA5", "#88C0D0"),
+                        border_width=1
+                    )
+                else:
+                    btn.configure(
+                        fg_color="transparent", 
+                        text_color=("gray30", "gray70"),
+                        border_width=0
+                    )
+            # Save config if needed
+            if hasattr(self, 'save_config'): self.save_config()
+
+        # Build Theme Buttons
+        theme_seg_bg.grid_columnconfigure(0, weight=1)
+        theme_seg_bg.grid_columnconfigure(1, weight=1)
+        theme_seg_bg.grid_columnconfigure(2, weight=1)
+        
+        current_mode = ctk.get_appearance_mode()
+        
+        for i, (title, code, icon) in enumerate(self.theme_opts):
+            btn = ctk.CTkButton(
+                theme_seg_bg, 
+                text=f"{icon} {title}",
+                font=("Microsoft JhengHei UI", 12, "bold"),
+                width=90, height=35,
+                corner_radius=8,
+                fg_color="transparent",
+                hover_color=("white", "#404040"),
+                command=lambda c=code: on_theme_click(c)
+            )
+            btn.grid(row=0, column=i, padx=4, pady=4, sticky="ew")
+            self.theme_btns[code] = btn
+            
+            # Check for initial match (approximate)
+            if code == current_mode:
+                btn.configure(
+                    fg_color=("white", "#5A5A5A"), 
+                    text_color=("#1F6AA5", "#88C0D0"),
+                    border_color=("#1F6AA5", "#88C0D0"),
+                    border_width=1
+                )
+            elif code == "System" and current_mode not in ["Light", "Dark"]:
+                 # Just in case
+                 pass
 
         # Divider
         ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")
@@ -1810,13 +1926,13 @@ class AppLayoutMixin:
             r1.pack(fill="x")
             
             ctk.CTkLabel(r1, text=icon, font=("Segoe UI Emoji", 18), width=30).pack(side="left")
-            ctk.CTkLabel(r1, text=title, font=("Microsoft JhengHei UI", 15, "bold")).pack(side="left", padx=5)
+            ctk.CTkLabel(r1, text=title, font=(self.font_family, 15, "bold")).pack(side="left", padx=5)
             
-            sw = ctk.CTkSwitch(r1, text="", variable=var, command=_save, progress_color="#1F6AA5", button_hover_color="#144870", width=40)
+            sw = ctk.CTkSwitch(r1, text="", variable=var, command=_save, progress_color="#2CC985", button_hover_color="#20A068", width=40)
             sw.pack(side="right")
             
             # Row 2: Desc
-            ctk.CTkLabel(f, text=desc, font=("Microsoft JhengHei UI", 12), text_color=("gray50", "gray60"), wraplength=500, justify="left").pack(anchor="w", padx=(40, 0), pady=(5,0))
+            ctk.CTkLabel(f, text=desc, font=(self.font_family, 12), text_color=("gray50", "gray60"), wraplength=500, justify="left").pack(anchor="w", padx=(40, 0), pady=(5,0))
 
         _add_item("📋", "監聽剪貼簿", self.var_clipboard, "若啟用，會自動檢測並搜尋剪貼簿中的影片連結。")
         _add_item("🔔", "通知系統", self.var_notification, "若啟用，下載完成時會發送系統通知。")

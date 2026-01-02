@@ -141,7 +141,19 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         except Exception as e: 
             print(f"Set Icon Error: {e}") 
         
-        ctk.set_appearance_mode(DEFAULT_APPEARANCE_MODE)
+        # --- Theme Initialization (Pre-read to avoid flicker) ---
+        temp_theme = DEFAULT_APPEARANCE_MODE
+        try:
+            temp_data_dir = os.path.join(app_path, "data")
+            temp_cfg = os.path.join(temp_data_dir, "config.json")
+            if os.path.exists(temp_cfg):
+                with open(temp_cfg, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                if "theme" in saved:
+                    temp_theme = saved["theme"]
+        except: pass
+    
+        ctk.set_appearance_mode(temp_theme)
         
         self.font_family = "Microsoft JhengHei UI" if sys.platform.startswith("win") else "PingFang TC"
         self.font_title = (self.font_family, 14, "bold")
@@ -812,32 +824,34 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.after(0, self.update_queue_ui)
 
     def show_toast(self, message, duration=2000, color="#01814A"):
+        """顯示跟隨視窗的通知 (使用 Button 模擬圓角 Toast)"""
         if hasattr(self, 'current_toast') and self.current_toast:
             try: self.current_toast.destroy()
             except: pass
             
-        toast = ctk.CTkToplevel(self)
+        # Use CTkButton for reliable rounded corners
+        toast = ctk.CTkButton(
+            self, 
+            text=message, 
+            fg_color=color, 
+            hover_color=color, # Disable hover effect
+            bg_color=("gray86", "gray17"), # Match standard Frame background to hide corners
+            corner_radius=22, 
+            width=220, 
+            height=45,
+            font=(self.font_family, 13, "bold"),
+            text_color="white"
+        )
         self.current_toast = toast 
         
-        toast.overrideredirect(True) 
-        
-        x = self.winfo_x() + self.winfo_width() - 220
-        y = self.winfo_y() + 60
-        toast.geometry(f"200x50+{x}+{y}")
-        toast.attributes("-alpha", 1.0)
-        toast.attributes("-topmost", True)
-        
-        frame = ctk.CTkFrame(toast, fg_color=color, corner_radius=10)
-        frame.pack(fill="both", expand=True)
-        
-        label = ctk.CTkLabel(frame, text=message, text_color="white", font=("Microsoft JhengHei UI", 14, "bold"))
-        label.pack(expand=True)
-        
-        toast.update_idletasks()
+        # Position: Top Right (Relative to Window)
+        toast.place(relx=1.0, x=-20, y=50, anchor="ne")
+        toast.lift()
         
         def close_toast():
-            try: toast.destroy()
-            except: pass
+            if hasattr(self, 'current_toast') and self.current_toast == toast:
+                try: toast.destroy()
+                except: pass
             
         self.after(duration, close_toast)
 
@@ -1182,52 +1196,79 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         if task_id in self.active_queue_tasks:
              last_percent = self.active_queue_tasks[task_id].get('last_percent', 0)
 
-        core = YtDlpCore()
-        
-        self.active_queue_tasks[task_id] = {
-            'core': core,
-            'config': config,
-            'status': 'running',
-            'last_percent': last_percent
-        }
-        
-        if not is_resume:
-            self.create_active_task_widget(task_id, config, "排程任務啟動中...")
-        else:
-             msg = "恢復下載中..."
-             if last_percent > 0: msg = f"恢復下載中 ({int(last_percent*100)}%)..."
-             self.update_task_widget(task_id, last_percent if last_percent > 0 else 0, msg)
-             self._update_task_buttons(task_id, "running")
+        # [Optimized] 使用獨立線程啟動下載，以便在續傳時能等待舊線程結束，避免 WinError 32
+        def _launcher():
+             # 1. 若為續傳，先等待舊線程完全釋放資源
+             if task_id in self.active_queue_tasks:
+                 old_core = self.active_queue_tasks[task_id].get('core')
+                 if old_core:
+                     old_core.stop_download() # 確保再次發送停止訊號
+                     if hasattr(old_core, 'download_thread') and old_core.download_thread.is_alive():
+                         print(f"[{task_id}] 正在等待舊下載線程結束...")
+                         old_core.download_thread.join(timeout=5.0) # 等待最多 5 秒
+             
+             # 2. 建立新核心
+             core = YtDlpCore()
+             
+             self.active_queue_tasks[task_id] = {
+                'core': core,
+                'config': config,
+                'status': 'running',
+                'last_percent': last_percent
+             }
+             
+             # 3. 回調主線程更新 UI
+             def _ui_logic():
+                 if not is_resume:
+                     self.create_active_task_widget(task_id, config, "排程任務啟動中...")
+                 else:
+                     self._update_task_buttons(task_id, "running")
+                     
+                 if self.frames["Tasks"].winfo_ismapped() and getattr(self, 'seg_tasks', None) and self.seg_tasks.get() != "進行中":
+                      self.seg_tasks.set("進行中")
+                      self.switch_task_view("進行中")
+                 
+                 self.log(f"啟動排程任務: {config['url']}")
+             
+             self.after(0, _ui_logic)
+             
+             # 4. 準備 Title Callback
+             def update_title_callback(real_title):
+                if not config.get('filename'):
+                    # 更新字典 (需注意 thread-safety，不過 Python dict 操作通常是 atomic)
+                    if task_id in self.active_queue_tasks:
+                        self.active_queue_tasks[task_id]['config']['default_title'] = real_title
+                    config['default_title'] = real_title
+                    
+                    def _update_ui_title():
+                        if task_id in self.active_task_widgets:
+                            if len(real_title) > 50: real_title_disp = real_title[:47] + "..."
+                            else: real_title_disp = real_title
+                            
+                            widgets = self.active_task_widgets[task_id]
+                            if 'title_label' in widgets:
+                                widgets['title_label'].configure(text=real_title_disp) 
+                    
+                    self.after(0, _update_ui_title)
 
-        if self.frames["Tasks"].winfo_ismapped() and getattr(self, 'seg_tasks', None) and self.seg_tasks.get() != "進行中":
-             self.seg_tasks.set("進行中")
-             self.switch_task_view("進行中")
-        
-        self.log(f"啟動排程任務: {config['url']}")
+             # 5. 啟動下載
+             core.start_download_thread(
+                config, 
+                progress_callback=lambda p, m, s=None, e=None: self.update_progress(p, m, task_id, s, e), 
+                log_callback=self.log,
+                finish_callback=lambda s, m: self.on_download_finished(s, m, task_id, config),
+                title_callback=update_title_callback
+            )
+
+        threading.Thread(target=_launcher, daemon=True).start()
+        # [End of _start_core_download]
         
         def update_title_callback(real_title):
             if not config.get('filename'):
                 self.active_queue_tasks[task_id]['config']['default_title'] = real_title
                 config['default_title'] = real_title
                 
-                def _update_ui():
-                    if task_id in self.active_task_widgets:
-                        if len(real_title) > 50: real_title_disp = real_title[:47] + "..."
-                        else: real_title_disp = real_title
-                        
-                        widgets = self.active_task_widgets[task_id]
-                        if 'title_label' in widgets:
-                            widgets['title_label'].configure(text=real_title_disp) 
-                
-                self.after(0, _update_ui)
 
-        core.start_download_thread(
-            config, 
-            progress_callback=lambda p, m, s=None, e=None: self.update_progress(p, m, task_id, s, e), 
-            log_callback=self.log,
-            finish_callback=lambda s, m: self.on_download_finished(s, m, task_id, config),
-            title_callback=update_title_callback
-        )
 
     def update_background_progress(self, task_id, percent, msg):
         if task_id in self.bg_tasks:
@@ -1366,6 +1407,9 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 try: 
                     task_info['core'].stop_download()
                 except: pass
+                
+                # [UI Fix] 立即更新 UI 顯示為暫停狀態
+                self.update_task_widget(task_id, task_info.get('last_percent', 0), "暫停下載 (雙擊繼續)")
 
             elif task_info['status'] == 'paused':
                 self.resume_task(task_id)

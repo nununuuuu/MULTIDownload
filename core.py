@@ -143,14 +143,11 @@ class YtDlpCore:
 
     def stop_download(self):
         self.stop_signal = True
-        # [Fix] 強制中止執行緒 (以免卡在 I/O 等待 Hook 導致無法停止)
-        if hasattr(self, 'download_thread') and self.download_thread.is_alive():
-            try:
-                import ctypes
-                tid = self.download_thread.ident
-                # 發送 SystemExit 例外
-                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(tid), ctypes.py_object(SystemExit))
-            except: pass
+        # [Refinement] 移除強制殺死線程的邏輯
+        # 強制在此處使用 SystemExit 會導致檔案控制代碼 (File Handle) 未正確釋放
+        # 進而導致暫停後恢復時出現 WinError 32 (檔案被佔用)
+        # yt-dlp 會在 progress_hook 中檢查 stop_signal 並優雅退出
+        pass
 
     def start_download_thread(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
         if self.is_downloading: return
@@ -288,6 +285,9 @@ class YtDlpCore:
                      if log_callback: log_callback("分段下載完畢 (Video/Audio)，準備合併...")
             def info(self, msg): pass
             def warning(self, msg):
+                # [Filter] 過濾掉常見但不需要使用者介入的警告
+                if "JavaScript runtime" in msg or "SABR streaming" in msg:
+                    return
                 if log_callback: log_callback(f"[警告] {self._clean(msg)}")
             def error(self, msg):
                 if log_callback: log_callback(f"[錯誤] {self._clean(msg)}")
@@ -334,10 +334,10 @@ class YtDlpCore:
             })
             # [Optimization] Windows 檔案總管通常讀取 'artist' 而非 'uploader'
             # 這裡強制將 uploader 映射為 artist
-            # 並將 upload_date (YYYYMMDD) 取前4碼 (=YYYY) 轉為 date，這是最穩定的字串切片寫法
+            # 並使用正則表達式精確提取 upload_date 的前四碼 (YYYY) 作為年份，解決 slicing 可能的格式問題
             opts['parse_metadata'] = [
                 {'from': 'uploader', 'to': 'artist'},
-                {'from': '%(upload_date>%Y)s', 'to': 'date'},
+                {'from': '%(upload_date)s', 'regex': r'^(\d{4})', 'to': 'date'},
                 {'from': 'description', 'to': 'comment'},
             ]
 
@@ -502,23 +502,22 @@ class YtDlpCore:
                 except: pass
                 
                 break
-            except Exception as e:
-                err_str = str(e)
-                if "WinError 32" in err_str or "Permission denied" in err_str:
-                     if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。通常是防毒軟體正在掃描合併後的檔案。")
-                
-                if attempt == max_retries - 1:
-                    # 最後一次嘗試也失敗，丟出例外
-                    raise e 
-
             except yt_dlp.utils.DownloadError as e:
+                # 優先檢查停止訊號
+                if self.stop_signal:
+                    message = "下載已暫停"
+                    break
+
                 err_msg = str(e)
                 if "使用者手動停止" in err_msg: 
                     message = "下載已取消"
                     break
                 elif "WinError 32" in err_msg:
+                    # 如果在 DownloadError 訊息中包含 WinError 32
+                    if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。可能防毒軟體正在掃描。")
                     if attempt == max_retries - 1:
                         message = "檔案被佔用 (WinError 32)\n請關閉防毒軟體或檢查檔案是否被開啟。"
+                        break
                     continue 
                 elif ("could not find" in err_msg.lower() or "cookie database" in err_msg.lower() or "copy" in err_msg.lower()) and "cookie" in err_msg.lower():
                     if 'cookiesfrombrowser' in opts:
@@ -528,7 +527,21 @@ class YtDlpCore:
                 else: 
                     message = f"下載錯誤: {e}"
                     break
+
             except Exception as e:
+                # 優先檢查停止訊號
+                if self.stop_signal:
+                    message = "下載已暫停"
+                    break
+                    
+                err_str = str(e)
+                # 處理通用 WinError 32 (PermissionError 等)
+                if "WinError 32" in err_str or "Permission denied" in err_str:
+                     if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。通常是防毒軟體正在掃描合併後的檔案。")
+                     if attempt < max_retries - 1:
+                         continue # Retry
+                
+                # 若非可重試錯誤或已達最大重試次數
                 message = f"系統錯誤: {e}"
                 break
         

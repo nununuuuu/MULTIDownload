@@ -5,89 +5,64 @@ def setup_custom_titlebar(self):
     """建立自定義標題列"""
     # [Theme] 設定標題列背景色：(淺色模式, 深色模式)
 
-    # --- 移除原生標題列 (使用無邊框模式) ---
-    def apply_frameless_style():
+    # --- 移除原生標題列 (Native Frameless Strategy) ---
+    def apply_native_frameless():
+        import sys
         if sys.platform == "win32":
             try:
-                # 1. 啟用無邊框模式
-                self.overrideredirect(True)
+                # 1. 確保 OverrideRedirect 為 False (標準視窗模式)
+                self.overrideredirect(False)
                 
-                # 2. [FIX] 解決工作列圖示消失問題 (Dummy Window Method)
-                # 原理：建立一個隱藏的父視窗，讓它負責在工作列顯示
-                # 這樣主視窗 (self) 雖然是無邊框，但因為歸屬於 application，所以圖示會跟隨
+                # 2. 定義 Windows API 常數
+                GWL_STYLE = -16
+                WS_CAPTION = 0x00C00000  # 標題列
+                WS_THICKFRAME = 0x00040000 # 可調整大小的邊框 (保留此項以允許縮放)
                 
-                # 重設 App ID (讓 Windows 識別為同一組程式)
                 import ctypes
-                myappid = 'mycompany.multidownload.app.2.0'
-                try:
-                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-                except: pass
-
-                # 強制呼叫 Windows API 讓視窗顯示在工作列
-                # 這種方法比 Dummy Window 更直接且副作用較少 (不會有多餘視窗)
-                hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-                if not hwnd: hwnd = self.winfo_id()
+                from ctypes import windll
                 
-                GWL_EXSTYLE = -20
-                WS_EX_APPWINDOW = 0x00040000
-                WS_EX_TOOLWINDOW = 0x00000080
-                
-                def _force_show():
-                    # 1. 處理延伸樣式 (確保圖示顯示)
-                    ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                    ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+                def _remove_caption():
+                    hwnd = windll.user32.GetParent(self.winfo_id())
+                    if not hwnd: hwnd = self.winfo_id()
                     
-                    # 2. 處理基本樣式 (確保支援最小化交互)
-                    # 這是關鍵：必須告訴 Windows 這個無邊框視窗支援最小化指令
-                    GWL_STYLE = -16
-                    WS_SYSMENU = 0x00080000
-                    WS_MINIMIZEBOX = 0x00020000
+                    # 取得當前樣式
+                    old_style = windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
                     
-                    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-                    style = style | WS_SYSMENU | WS_MINIMIZEBOX
-                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
-
-                    # 3. 強制刷新
-                    ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0020 | 0x0002 | 0x0001 | 0x0004)
+                    # 移除標題列 (Caption) 但保留邊框 (ThickFrame) 以供縮放
+                    # 這樣系統仍視其為標準視窗，但沒有上方白條
+                    new_style = old_style & ~WS_CAPTION
+                    
+                    windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
+                    
+                    # 強制刷新樣式
+                    SWP_NOZORDER = 0x0004
+                    SWP_NOMOVE = 0x0002
+                    SWP_NOSIZE = 0x0001
+                    SWP_FRAMECHANGED = 0x0020
+                    SWP_SHOWWINDOW = 0x0040
+                    
+                    windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 
+                                              SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW)
                 
-                self.after(200, _force_show)
-
-                # [FIX] 恢復監聽 <Map> 事件，但加入防呆判斷
-                # 只有當樣式真的跑掉時才重設，避免陷入無窮迴圈或卡死
-                self._last_style_check = 0
+                # 在視窗建立後執行 (延遲確保 HWND 準備好)
+                self.after(100, _remove_caption)
+                
+                # 綁定 Map 事件以防樣式跑掉 (但只執行一次即可，比較安全)
+                self._frameless_applied = False
                 def on_map(e):
-                    if e.widget == self:
-                        # [Guard] 防止事件迴圈 (Debounce: 500ms)
-                        import time
-                        now = time.time()
-                        if now - getattr(self, '_last_style_check', 0) < 0.5:
-                            return
-                        
-                        # 檢查當前樣式
-                        current_ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                        
-                        # [FIX] 除了檢查是否缺少 APPWINDOW，還要檢查是否被偷加了 TOOLWINDOW
-                        is_app_window = current_ex_style & WS_EX_APPWINDOW
-                        is_tool_window = current_ex_style & WS_EX_TOOLWINDOW
-                        
-                        if not is_app_window or is_tool_window:
-                            self._last_style_check = now
-                            # 只有當樣式不正確時才強制重設
-                            self.after(100, _force_show)
+                    if e.widget == self and not self._frameless_applied:
+                        self._frameless_applied = True
+                        self.after(50, _remove_caption)
                 
                 self.bind("<Map>", on_map, add="+")
-                self.bind("<FocusIn>", on_map, add="+")
-                self.bind("<FocusOut>", on_map, add="+")
                 
             except Exception as e:
-                print(f"Apply Frameless Error: {e}")
+                print(f"Native Frameless Error: {e}")
 
-    # 延遲執行
-    self.after(100, apply_frameless_style)
-
+    # 執行新策略
+    apply_native_frameless()
     
-    # [UI] 標題列 UI (跟之前一樣，放在 Row 0)
+    # [UI] 標題列 UI
     self.title_bar_frame = ctk.CTkFrame(self, height=32, corner_radius=0, fg_color=("gray90", "#2B2B2B"))
     self.title_bar_frame.grid(row=0, column=0, columnspan=2, sticky="ew")
     self.title_bar_frame.grid_propagate(False) # 固定高度
@@ -176,13 +151,12 @@ def setup_custom_titlebar(self):
     
     # 2. Minimize
     def minimize():
-        """最小化（恢復時會有淡入動畫）"""
+        """最小化（標準方式）"""
         try:
-            self.iconify()
-        except:
-            import ctypes
-            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-            ctypes.windll.user32.ShowWindow(hwnd, 6)
+            # Native Frameless 下，直接使用標準 iconify 即可
+            self.iconify() 
+        except Exception as e:
+            print(f"Minimize Error: {e}")
         
     btn_min = ctk.CTkButton(
         btn_frame, text="─", width=45, height=30, corner_radius=0,
@@ -257,6 +231,7 @@ def setup_custom_titlebar(self):
         font=("Microsoft JhengHei UI", 12, "bold"), command=toggle_maximize
     )
     btn_max.pack(side="left")
+
     
     # 3. Close
     def close_app():
