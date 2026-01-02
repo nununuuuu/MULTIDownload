@@ -5,101 +5,62 @@ def setup_custom_titlebar(self):
     """建立自定義標題列"""
     # [Theme] 設定標題列背景色：(淺色模式, 深色模式)
 
-    # --- 嘗試移除原生標題列並應用自定義樣式 (Windows Only) ---
+    # --- 移除原生標題列 (使用無邊框模式) ---
     def apply_frameless_style():
         if sys.platform == "win32":
             try:
-                # [Important] 為了保留原生最小化動畫與 DWM 特性，必須設為 False
-                self.overrideredirect(False)
+                # 1. 啟用無邊框模式 (這會直接移除標題列)
+                self.overrideredirect(True)
                 
-                from ctypes import windll, byref, c_int, sizeof
-                hwnd = windll.user32.GetParent(self.winfo_id())
+                # 2. 關於工作列圖示 (overrideredirect=True 會導致從工作列消失)
+                # 必須重設 GWL_EXSTYLE 為 WS_EX_APPWINDOW
+                import ctypes
+                from ctypes import windll
                 
-                # 1. 去除標題列 (WS_CAPTION)
-                GWL_STYLE = -16
-                WS_CAPTION = 0x00C00000
-                WS_SYSMENU = 0x00080000
-                
-                style = windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-                
-                # [Animation Fix] 為了找回原生的「縮放彈出」動畫，必須保留這些樣式
-                # WS_SYSMENU + WS_MINIMIZEBOX/MAXIMIZEBOX 是觸發 Windows DWM 動畫的關鍵
-                WS_SYSMENU = 0x00080000
-                WS_MINIMIZEBOX = 0x00020000
-                WS_MAXIMIZEBOX = 0x00010000
-                WS_POPUP = 0x80000000 # [Animation Fix] 加上 POPUP 屬性通常能恢復無標題列視窗的動畫
-                
-                # 移除標題列(WS_CAPTION) 但強制加回動畫控制屬性 與 POPUP
-                new_style = (style & ~WS_CAPTION) | WS_POPUP | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
-                
-                windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
-                
-                # 3. 修正頂部白條：啟用 DWM 深色模式 (Immersive Dark Mode)
-                # 這會將殘留的視窗邊框渲染為深色
+                # 讓 Windows 知道這是一個獨立的 App
+                myappid = 'mycompany.multidownload.app.2.0'
                 try:
-                    from ctypes import c_int, byref, sizeof, Structure
-                    
-                    class MARGINS(Structure):
-                        _fields_ = [("cxLeftWidth", c_int),
-                                    ("cxRightWidth", c_int),
-                                    ("cyTopHeight", c_int),
-                                    ("cyBottomHeight", c_int)]
-                                    
-                    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-                    DWMWA_BORDER_COLOR = 34    # [New] 控制視窗周圍邊框顏色
-                    DWMWA_CAPTION_COLOR = 35   # 控制頂部標題列顏色
-                    
-                    # 偵測當前主題模式
-                    mode = ctk.get_appearance_mode()
-                    
-                    if mode == "Light":
-                        use_dark_mode = 0
-                        # gray90 (#E5E5E5) -> 0x00E5E5E5
-                        color = 0x00E5E5E5
-                    else:
-                        use_dark_mode = 1
-                        # #2B2B2B -> 0x002B2B2B (RGB和BGR相同)
-                        color = 0x002B2B2B
-                    
-                    # 1. 設定 DWM 深色/淺色模式優先權
-                    windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, byref(c_int(use_dark_mode)), sizeof(c_int))
-                    
-                    # 2. [Color Fix] 指定標題列區域顏色
-                    windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, byref(c_int(color)), sizeof(c_int))
+                    windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+                except: pass
 
-                    # 3. [Border Fix] 指定視窗邊框顏色 (讓周圍那圈細線也變色)
-                    windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, byref(c_int(color)), sizeof(c_int))
+                def _force_icon():
+                    try:
+                        hwnd = windll.user32.GetParent(self.winfo_id())
+                        if not hwnd: hwnd = self.winfo_id() # Fallback
+                        
+                        # A. 處理延伸樣式 (ExStyle) - 確保顯示在工作列
+                        GWL_EXSTYLE = -20
+                        WS_EX_APPWINDOW = 0x00040000
+                        WS_EX_TOOLWINDOW = 0x00000080
+                        
+                        ex_style = windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                        ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+                        windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
 
-                    # [Critical] 擴展邊框至原來標題列的位置
-                    # 配合上述顏色修正，這 1px 邊框將與標題列融為一體
-                    margins = MARGINS(0, 0, 1, 0) 
-                    windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, byref(margins))
-                    
-                except Exception as e:
-                    print(f"DWM Effect Error: {e}")
+                        # B. 處理基本樣式 (Style) - 確保工作列點擊有反應 (縮小/還原)
+                        # 雖然是無邊框，但必須騙 Windows 說我們有最小化按鈕
+                        GWL_STYLE = -16
+                        WS_SYSMENU = 0x00080000
+                        WS_MINIMIZEBOX = 0x00020000
+                        
+                        style = windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+                        style = style | WS_SYSMENU | WS_MINIMIZEBOX
+                        windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+                        
+                        # C. 強制刷新
+                        # SWP_NOSIZE|SWP_NOMOVE|SWP_NOZORDER|SWP_FRAMECHANGED
+                        windll.user32.SetWindowPos(hwnd, 0, 0,0,0,0, 0x0001|0x0002|0x0004|0x0020)
+                    except Exception as e:
+                        print(f"Force Icon Error: {e}")
 
-                # 2. 強制刷新
-                windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x27) # SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE
-                
-                # 3. 確保任務列顯示圖示
-                try:
-                    GWL_EXSTYLE = -20
-                    WS_EX_APPWINDOW = 0x00040000
-                    WS_EX_TOOLWINDOW = 0x00000080
-                    
-                    ex_style = windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                    ex_style = ex_style & ~WS_EX_TOOLWINDOW  # 移除工具視窗樣式
-                    ex_style = ex_style | WS_EX_APPWINDOW     # 強制任務列圖示
-                    windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
-                except Exception as e:
-                    print(f"Taskbar Icon Error: {e}")
+                # 延遲執行，確保視窗建立完成
+                self.after(200, _force_icon)
                 
             except Exception as e:
-                print(f"Apply Style Error: {e}")
-                self.overrideredirect(True) # Fallback
+                print(f"Apply Frameless Error: {e}")
 
-    # 延遲執行樣式修改，確保視窗已建立並覆蓋可能的重置
-    self.after(200, apply_frameless_style)
+    # 延遲執行
+    self.after(100, apply_frameless_style)
 
     
     # [UI] 標題列 UI (跟之前一樣，放在 Row 0)

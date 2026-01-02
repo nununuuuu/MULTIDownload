@@ -1540,79 +1540,155 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.after(0, lambda: tk.messagebox.showerror("錯誤", f"核心安裝失敗:\n{err_msg}"))
 
     def check_app_update(self, silent=False):
-        """檢查 App 是否有新版本 (GitHub Releases, 優先支援 Zip 全量更新)"""
+        """檢查 App 是否有新版本 (GitHub Releases, 支援 Zip 與 Exe 選擇)"""
         if silent and hasattr(self, 'var_auto_update') and not self.var_auto_update.get():
             return
-        try:
-            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-            
-            session = requests.Session()
-            resp = session.get(api_url, timeout=10)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                latest_tag = data.get("tag_name", "Unknown")
+        
+        def _check_process():
+            try:
+                api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
                 
-                # --- 版本比對邏輯 (更新) ---
-                def parse_version(v_str):
-                    """移除 v 前綴並轉為 tuple 進行比對 (e.g. 'v2025.12.28' -> (2025, 12, 28))"""
-                    try:
-                        # 移除 'v' 或 'V'，並移除空白
-                        clean_v = v_str.lower().lstrip('v').strip()
-                        # 分割並轉為整數
-                        return tuple(map(int, clean_v.split('.')))
-                    except ValueError:
-                        return (0, 0, 0)
-
-                remote_ver = parse_version(latest_tag)
-                local_ver = parse_version(APP_VERSION)
-
-                # 只有當 雲端版本 > 本地版本 時才提示
-                if remote_ver > local_ver:
-                    download_url = ""
-                    # 優先尋找 .zip (全量更新)
-                    for asset in data.get("assets", []):
-                        # 排除 Source code (雖然 API 通常不包含，但以防萬一) 並優先抓取主程式
-                        if asset["name"].endswith(".zip") and "Source code" not in asset["name"]:
-                            download_url = asset["browser_download_url"]
-                            # 如果檔名包含 MULTIDownload 或 update，則是最佳目標，直接 break
-                            if "MULTIDownload" in asset["name"] or "update" in asset["name"].lower():
-                                break
+                session = requests.Session()
+                resp = session.get(api_url, timeout=10)
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    latest_tag = data.get("tag_name", "Unknown")
                     
-                    # 其次尋找 .exe (快速更新)
-                    if not download_url:
-                        for asset in data.get("assets", []):
-                            if asset["name"].endswith(".exe"):
-                                download_url = asset["browser_download_url"]
-                                break
+                    # --- 版本比對邏輯 ---
+                    def parse_version(v_str):
+                        try:
+                            clean_v = v_str.lower().lstrip('v').strip()
+                            return tuple(map(int, clean_v.split('.')))
+                        except ValueError:
+                            return (0, 0, 0)
+
+                    remote_ver = parse_version(latest_tag)
+                    local_ver = parse_version(APP_VERSION)
                     
-                    if download_url:
-                        msg = f"發現新版本 {latest_tag}！\n(目前版本: {APP_VERSION})\n\n"
-                        if download_url.endswith(".zip"):
-                            msg += "此更新為「完整資源更新」，將自動下載並覆蓋應用程式資料夾。\n"
-                        else:
-                            msg += "此更新為「快速更新」，僅替換主程式執行檔。\n"
-                        msg += "\n是否立即更新並重啟？"
+                    if remote_ver > local_ver:
+                        zip_url = ""
+                        exe_url = ""
                         
-                        if tk.messagebox.askyesno("發現新版本", msg):
-                            self.perform_self_update(download_url)
-                    else:
-                         tk.messagebox.showwarning("無法更新", f"發現新版本 {latest_tag}，但在發布文件中找不到 .zip 或 .exe 檔。")
-                else:
-                    # 若 remote <= local (包含相等)，視為不需更新
-                    if not silent:
-                        tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。\n(雲端最新: {latest_tag})")
-            elif resp.status_code == 404:
-                if not silent:
-                    tk.messagebox.showerror("檢查失敗", "找不到發布版本 (GitHub Repo 未發布 Release 或設為私有)。")
-            else:
-                if not silent:
-                    tk.messagebox.showerror("檢查失敗", f"無法連接伺服器 (Status: {resp.status_code})。")
-            
-        except Exception as e:
-            if not silent:
-                tk.messagebox.showerror("檢查錯誤", f"檢查更新時發生錯誤:\n{str(e)}")
+                        # 同時尋找兩種資源
+                        for asset in data.get("assets", []):
+                            name_lower = asset["name"].lower()
+                            if "source code" in name_lower: continue
+                            
+                            if name_lower.endswith(".zip"):
+                                if "multidownload" in name_lower or "update" in name_lower:
+                                    zip_url = asset["browser_download_url"]
+                            elif name_lower.endswith(".exe"):
+                                if "multidownload" in name_lower:
+                                    exe_url = asset["browser_download_url"]
 
+                        # 回到主線程顯示 UI
+                        self.after(0, lambda: self._handle_update_found(latest_tag, zip_url, exe_url))
+                            
+                    else:
+                        if not silent:
+                            self.after(0, lambda: tk.messagebox.showinfo("檢查完成", f"目前已是最新版本 ({APP_VERSION})。\n(雲端最新: {latest_tag})"))
+                
+                elif resp.status_code == 404:
+                    if not silent:
+                        self.after(0, lambda: tk.messagebox.showerror("檢查失敗", "找不到發布版本 (GitHub Repo 未發布 Release 或設為私有)。"))
+                else:
+                    if not silent:
+                        val = resp.status_code
+                        self.after(0, lambda: tk.messagebox.showerror("檢查失敗", f"無法連接伺服器 (Status: {val})。"))
+                
+            except Exception as e:
+                err = str(e)
+                if not silent:
+                    self.after(0, lambda: tk.messagebox.showerror("檢查錯誤", f"檢查更新時發生錯誤:\n{err}"))
+
+        threading.Thread(target=_check_process, daemon=True).start()
+
+    def _handle_update_found(self, version, zip_url, exe_url):
+        """處理更新UI邏輯 (Main Thread)"""
+        if zip_url or exe_url:
+            self.show_update_selection_dialog(version, zip_url, exe_url)
+        else:
+            tk.messagebox.showwarning("無法更新", f"發現新版本 {version}，但在發布文件中找不到 .zip 或 .exe 檔。")
+
+    def show_update_selection_dialog(self, version, zip_url, exe_url):
+        """顯示更新選擇視窗 (統一使用自定義 UI 以支援字體格式)"""
+        
+        # 如果已經有彈窗，先關閉
+        if hasattr(self, 'update_win') and self.update_win.winfo_exists():
+            self.update_win.destroy()
+            
+        top = ctk.CTkToplevel(self)
+        top.title("發現新版本")
+        top.geometry("420x300")
+        top.attributes("-topmost", True)
+        self.update_win = top
+        
+        # --- 視窗中心定位保持不變 ---
+        x = self.winfo_x() + (self.winfo_width() // 2) - 210
+        y = self.winfo_y() + (self.winfo_height() // 2) - 175
+        top.geometry(f"+{x}+{y}")
+        
+        # 1. Title - 增加上方的留白，讓標題更顯眼
+        ctk.CTkLabel(top, text="發現新版本", font=("Microsoft JhengHei UI", 22, "bold")).pack(pady=(35, 10))
+        
+        # 2. Version Diff - 創造層次感
+        ver_frame = ctk.CTkFrame(top, fg_color="transparent")
+        ver_frame.pack(pady=(0, 25))
+        
+        # 舊版本：字體縮小、顏色變淡
+        ctk.CTkLabel(ver_frame, text=f"{APP_VERSION}", font=("Consolas", 13), text_color="#888888").pack(side="left", padx=5)
+        # 箭頭：使用更纖細的符號
+        ctk.CTkLabel(ver_frame, text="→", font=("Consolas", 14), text_color="#AAAAAA").pack(side="left")
+        # 新版本：字體加大、粗體、深色（或系統預設顏色）
+        ctk.CTkLabel(ver_frame, text=f"{version}", font=("Consolas", 20, "bold")).pack(side="left", padx=8)
+
+        # Helper Actions
+        def do_zip():
+            top.destroy()
+            self.perform_self_update(zip_url)
+            
+        def do_exe():
+            top.destroy()
+            self.perform_self_update(exe_url)
+            
+        def do_cancel():
+            top.destroy()
+
+        # 3. Dynamic Buttons & Descriptions
+        # 優化點：將說明文字字體稍微調小，顏色調淡，讓它看起來像輔助資訊
+        
+        if zip_url and exe_url:
+            ctk.CTkLabel(top, text="請選擇您偏好的更新方式", font=("Microsoft JhengHei UI", 13), text_color="#666666").pack(pady=(0, 10))
+             
+            # ZIP 按鈕
+            ctk.CTkButton(top, text="完整更新 (.zip)\n推薦：包含資源檔更新", command=do_zip, 
+                        width=280, height=55, font=("Microsoft JhengHei UI", 13), 
+                        fg_color="#1F6AA5", hover_color="#144870", corner_radius=8).pack(pady=8)
+             
+            # EXE 按鈕 (次要按鈕使用深色或透明描邊)
+            ctk.CTkButton(top, text="快速更新 (.exe)\n僅替換主程式", command=do_exe, 
+                        width=280, height=55, font=("Microsoft JhengHei UI", 13), 
+                        fg_color="#444444", hover_color="#333333", corner_radius=8).pack(pady=8)
+
+        elif zip_url:
+            # 單一更新時，說明文字稍微遠離標題，靠近按鈕
+            ctk.CTkLabel(top, text="本次更新將包含完整的資源檔案 (.zip)", font=("Microsoft JhengHei UI", 12), text_color="gray").pack(pady=(0, 5))
+            ctk.CTkButton(top, text="立即更新 (.zip)", command=do_zip, 
+                        width=280, height=48, font=("Microsoft JhengHei UI", 15, "bold"), 
+                        fg_color="#1F6AA5", hover_color="#144870", corner_radius=8).pack(pady=10)
+
+        elif exe_url:
+            ctk.CTkLabel(top, text="本次僅針對程式核心進行快速更新 (.exe)", font=("Microsoft JhengHei UI", 12), text_color="gray").pack(pady=(0, 5))
+            ctk.CTkButton(top, text="立即更新 (.exe)", command=do_exe, 
+                        width=280, height=48, font=("Microsoft JhengHei UI", 15, "bold"), 
+                        fg_color="#1F6AA5", hover_color="#144870", corner_radius=8).pack(pady=10)
+        
+        # 4. Cancel - 增加下方邊距，並讓它看起來更像一個輕量的選項
+        ctk.CTkButton(top, text="暫不更新", font=("Microsoft JhengHei UI", 12), command=do_cancel, 
+                    width=100, height=30, fg_color="transparent", text_color="#777777", 
+                    hover_color=("gray90", "gray25")).pack(side="bottom", pady=(0, 25))
+    
     def perform_self_update(self, download_url):
         try:
             
