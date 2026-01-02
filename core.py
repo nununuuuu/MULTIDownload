@@ -4,6 +4,7 @@ import re
 import time
 from datetime import datetime
 import sys
+import glob
 
 class YtDlpCore:
     def __init__(self):
@@ -142,14 +143,24 @@ class YtDlpCore:
 
     def stop_download(self):
         self.stop_signal = True
+        # [Fix] 強制中止執行緒 (以免卡在 I/O 等待 Hook 導致無法停止)
+        if hasattr(self, 'download_thread') and self.download_thread.is_alive():
+            try:
+                import ctypes
+                tid = self.download_thread.ident
+                # 發送 SystemExit 例外
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(tid), ctypes.py_object(SystemExit))
+            except: pass
 
     def start_download_thread(self, config, progress_callback, log_callback, finish_callback, title_callback=None):
         if self.is_downloading: return
         self.stop_signal = False
         self.is_downloading = True
-        thread = threading.Thread(target=self._run_download, args=(config, progress_callback, log_callback, finish_callback, title_callback))
-        thread.daemon = True
-        thread.start()
+        
+        # [Fix] 保存 Thread 參照以便強制作業
+        self.download_thread = threading.Thread(target=self._run_download, args=(config, progress_callback, log_callback, finish_callback, title_callback))
+        self.download_thread.daemon = True
+        self.download_thread.start()
 
     def _remove_ansi(self, text):
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -303,9 +314,33 @@ class YtDlpCore:
         if config.get('proxy'): opts['proxy'] = config['proxy']
         
         # Post-Processing Options
+        # [FIX] 初始化 Post-Processors 列表
+        # 改為完全手動管理 PP，確保縮圖先嵌入，再寫入 Metadata
+        opts.setdefault('postprocessors', [])
+
         if config.get('embed_thumbnail'): 
-            opts['writethumbnail'] = True
-            opts['embedthumbnail'] = True
+            opts['writethumbnail'] = True # 下載封面
+            # opts['embedthumbnail'] = True # [Remove] 移除自動 flag
+            opts['postprocessors'].append({
+                'key': 'EmbedThumbnail',
+            })
+        
+        if config.get('add_metadata'):
+            # 強制加入 Metadata 處理器 (必須在 EmbedThumbnail 之後)
+            opts['postprocessors'].append({
+                'key': 'FFmpegMetadata',
+                'add_chapters': True,
+                'add_metadata': True,
+            })
+            # [Optimization] Windows 檔案總管通常讀取 'artist' 而非 'uploader'
+            # 這裡強制將 uploader 映射為 artist
+            # 並將 upload_date (YYYYMMDD) 取前4碼 (=YYYY) 轉為 date，這是最穩定的字串切片寫法
+            opts['parse_metadata'] = [
+                {'from': 'uploader', 'to': 'artist'},
+                {'from': '%(upload_date>%Y)s', 'to': 'date'},
+                {'from': 'description', 'to': 'comment'},
+            ]
+
         if config.get('sponsorblock'): 
             # 直接使用使用者勾選的類別列表
             sb_list = config.get('sponsor_cats_list', ['all'])
@@ -437,8 +472,10 @@ class YtDlpCore:
                 if attempt == 0:
                     if log_callback: log_callback(f"啟動下載: {config['url']}")
                 else:
-                    if log_callback: log_callback(f"檔案被佔用，正在重試 ({attempt}/{max_retries})...")
-                    time.sleep(2) 
+                    if log_callback: log_callback(f"檔案被佔用或下載失敗，等待系統釋放資源 ({attempt}/{max_retries})...")
+                    time.sleep(5) # [UPGRADE] 延長等待時間至 5秒，讓 Antivirus 有時間掃描完釋放
+                    
+                    # 嘗試清理可能殘留的暫存檔 (雖難以精確預測檔名，但可依賴 yt-dlp 的 overwrites)
 
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([config['url']])
@@ -447,6 +484,32 @@ class YtDlpCore:
                 message = "下載成功！"
                 if progress_callback: progress_callback(1.0, "下載完成 100%")
                 break 
+            except (SystemExit, KeyboardInterrupt):
+                message = "下載已取消 (強制中止)"
+                
+                # [Fix] 強制中止後主動清理殘檔，避免 WinError 32
+                try:
+                    time.sleep(1) # 等待 I/O 釋放
+                    base_path = os.path.join(config['save_path'], filename_tmpl)
+                    # 尋找所有可能的暫存檔 (例如 .part, .ytdl, .mp4, .webm...)
+                    # 使用 glob 模糊搜尋檔名開頭相符的檔案
+                    for f in glob.glob(f"{glob.escape(base_path)}*"):
+                        try: 
+                            if os.path.exists(f): 
+                                os.remove(f)
+                                if log_callback: log_callback(f"[系統] 已清理殘檔: {os.path.basename(f)}")
+                        except: pass
+                except: pass
+                
+                break
+            except Exception as e:
+                err_str = str(e)
+                if "WinError 32" in err_str or "Permission denied" in err_str:
+                     if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。通常是防毒軟體正在掃描合併後的檔案。")
+                
+                if attempt == max_retries - 1:
+                    # 最後一次嘗試也失敗，丟出例外
+                    raise e 
 
             except yt_dlp.utils.DownloadError as e:
                 err_msg = str(e)

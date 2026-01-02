@@ -1126,10 +1126,15 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         msg = f"下載中 ({active_count}/{self.max_concurrent_downloads}) | 等待中: {queue_count}{status_suffix}"
             
-        if active_count > 0:
+        if active_count >= 1:
             self.downloading = True
-            self.btn_download.configure(state="disabled", text="下載中...")
-            self.lbl_status.configure(text=msg)
+            # [Refine] 允許隨時加入新任務 (Queue Mode)
+            self.btn_download.configure(state="normal", text="快速下載")
+
+            if active_count > 1:
+                self.lbl_status.configure(text=msg)
+            # elseif active_count == 1: Do not update lbl_status (keep update_progress percentage)
+
         elif active_count == 0 and queue_count == 0:
             idle_msg = f"準備就緒{status_suffix}"
             
@@ -1266,13 +1271,19 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         # 多任務時，進度條顯示最近活動的任務，或者保持忙碌狀態
         try:
-            if len(self.active_queue_tasks) > 1:
-                # 多任務時顯示文字，進度條設為 indeterminate 比較好
+            active_count = len(self.active_queue_tasks)
+            
+            # [Fix] 判定邏輯優化：只有當任務數 > 1 時才顯示 (N個任務執行中)
+            # 並且避免與 check_queue 中的文字打架
+            
+            if active_count > 1:
+                # 多任務: Indeterminate Bar + 總數狀態
                 self.progress_bar.configure(mode="indeterminate")
                 self.progress_bar.start()
-                self.lbl_status.configure(text=f"下載中 ({len(self.active_queue_tasks)} 個任務執行中...)")
-            else:
-                # 單任務依舊顯示精確進度
+                self.lbl_status.configure(text=f"下載中 ({active_count} 個任務執行中...)")
+            
+            elif active_count == 1:
+                # 單任務: Determinate Bar + 精確百分比
                 if percent == -1:
                     self.progress_bar.configure(mode="indeterminate")
                     self.progress_bar.start()
@@ -1281,10 +1292,13 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     self.progress_bar.stop()
                     self.progress_bar.set(percent)
                 
-                # 狀態文字只在單任務時更新詳細資訊，避免跳動
-                if len(self.active_queue_tasks) <= 1:
-                    if "合併" in msg or "轉檔" in msg: self.lbl_status.configure(text="合併轉檔中...")
-                    else: self.lbl_status.configure(text=f"下載中：{int(percent * 100)}%")
+                # 更新狀態文字 (過濾掉合併訊息以免太快閃爍)
+                if "合併" in msg or "轉檔" in msg: 
+                    self.lbl_status.configure(text="合併轉檔中...")
+                else: 
+                    # 確保顯示格式一致 (User requested: 下載中 + Percentage)
+                    self.lbl_status.configure(text=f"下載中 {int(percent * 100)}%")
+                    
         except: pass
 
     def on_download_finished(self, success, msg, task_id, config):

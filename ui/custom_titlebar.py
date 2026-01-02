@@ -9,52 +9,76 @@ def setup_custom_titlebar(self):
     def apply_frameless_style():
         if sys.platform == "win32":
             try:
-                # 1. 啟用無邊框模式 (這會直接移除標題列)
+                # 1. 啟用無邊框模式
                 self.overrideredirect(True)
                 
-                # 2. 關於工作列圖示 (overrideredirect=True 會導致從工作列消失)
-                # 必須重設 GWL_EXSTYLE 為 WS_EX_APPWINDOW
-                import ctypes
-                from ctypes import windll
+                # 2. [FIX] 解決工作列圖示消失問題 (Dummy Window Method)
+                # 原理：建立一個隱藏的父視窗，讓它負責在工作列顯示
+                # 這樣主視窗 (self) 雖然是無邊框，但因為歸屬於 application，所以圖示會跟隨
                 
-                # 讓 Windows 知道這是一個獨立的 App
+                # 重設 App ID (讓 Windows 識別為同一組程式)
+                import ctypes
                 myappid = 'mycompany.multidownload.app.2.0'
                 try:
-                    windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
                 except: pass
 
-                def _force_icon():
-                    try:
-                        hwnd = windll.user32.GetParent(self.winfo_id())
-                        if not hwnd: hwnd = self.winfo_id() # Fallback
-                        
-                        # A. 處理延伸樣式 (ExStyle) - 確保顯示在工作列
-                        GWL_EXSTYLE = -20
-                        WS_EX_APPWINDOW = 0x00040000
-                        WS_EX_TOOLWINDOW = 0x00000080
-                        
-                        ex_style = windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                        ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-                        windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+                # 強制呼叫 Windows API 讓視窗顯示在工作列
+                # 這種方法比 Dummy Window 更直接且副作用較少 (不會有多餘視窗)
+                hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+                if not hwnd: hwnd = self.winfo_id()
+                
+                GWL_EXSTYLE = -20
+                WS_EX_APPWINDOW = 0x00040000
+                WS_EX_TOOLWINDOW = 0x00000080
+                
+                def _force_show():
+                    # 1. 處理延伸樣式 (確保圖示顯示)
+                    ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+                    
+                    # 2. 處理基本樣式 (確保支援最小化交互)
+                    # 這是關鍵：必須告訴 Windows 這個無邊框視窗支援最小化指令
+                    GWL_STYLE = -16
+                    WS_SYSMENU = 0x00080000
+                    WS_MINIMIZEBOX = 0x00020000
+                    
+                    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    style = style | WS_SYSMENU | WS_MINIMIZEBOX
+                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-                        # B. 處理基本樣式 (Style) - 確保工作列點擊有反應 (縮小/還原)
-                        # 雖然是無邊框，但必須騙 Windows 說我們有最小化按鈕
-                        GWL_STYLE = -16
-                        WS_SYSMENU = 0x00080000
-                        WS_MINIMIZEBOX = 0x00020000
-                        
-                        style = windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-                        style = style | WS_SYSMENU | WS_MINIMIZEBOX
-                        windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
-                        
-                        # C. 強制刷新
-                        # SWP_NOSIZE|SWP_NOMOVE|SWP_NOZORDER|SWP_FRAMECHANGED
-                        windll.user32.SetWindowPos(hwnd, 0, 0,0,0,0, 0x0001|0x0002|0x0004|0x0020)
-                    except Exception as e:
-                        print(f"Force Icon Error: {e}")
+                    # 3. 強制刷新
+                    ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0020 | 0x0002 | 0x0001 | 0x0004)
+                
+                self.after(200, _force_show)
 
-                # 延遲執行，確保視窗建立完成
-                self.after(200, _force_icon)
+                # [FIX] 恢復監聽 <Map> 事件，但加入防呆判斷
+                # 只有當樣式真的跑掉時才重設，避免陷入無窮迴圈或卡死
+                self._last_style_check = 0
+                def on_map(e):
+                    if e.widget == self:
+                        # [Guard] 防止事件迴圈 (Debounce: 500ms)
+                        import time
+                        now = time.time()
+                        if now - getattr(self, '_last_style_check', 0) < 0.5:
+                            return
+                        
+                        # 檢查當前樣式
+                        current_ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                        
+                        # [FIX] 除了檢查是否缺少 APPWINDOW，還要檢查是否被偷加了 TOOLWINDOW
+                        is_app_window = current_ex_style & WS_EX_APPWINDOW
+                        is_tool_window = current_ex_style & WS_EX_TOOLWINDOW
+                        
+                        if not is_app_window or is_tool_window:
+                            self._last_style_check = now
+                            # 只有當樣式不正確時才強制重設
+                            self.after(100, _force_show)
+                
+                self.bind("<Map>", on_map, add="+")
+                self.bind("<FocusIn>", on_map, add="+")
+                self.bind("<FocusOut>", on_map, add="+")
                 
             except Exception as e:
                 print(f"Apply Frameless Error: {e}")
