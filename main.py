@@ -1679,7 +1679,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                         fg_color="#1F6AA5", hover_color="#144870", corner_radius=8).pack(pady=10)
 
         elif exe_url:
-            ctk.CTkLabel(top, text="本次僅針對程式核心進行快速更新 (.exe)", font=("Microsoft JhengHei UI", 12), text_color="gray").pack(pady=(0, 5))
+            ctk.CTkLabel(top, text="本次僅進行快速更新 (.exe)", font=("Microsoft JhengHei UI", 12), text_color="gray").pack(pady=(0, 5))
             ctk.CTkButton(top, text="立即更新 (.exe)", command=do_exe, 
                         width=280, height=48, font=("Microsoft JhengHei UI", 15, "bold"), 
                         fg_color="#1F6AA5", hover_color="#144870", corner_radius=8).pack(pady=10)

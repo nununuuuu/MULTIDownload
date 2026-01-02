@@ -4,3 +4,17 @@ Pillow
 requests
 packaging
 pyinstaller
+mutagen
+brotli
+certifi
+urllib3
+websockets
+curl_cffi
+pycryptodomex
+yt_dlp_ejs
+yt_dlp_ejs.yt
+yt_dlp_ejs.yt.solver
+secretstorage
+PIL
+PIL.Image
+PIL.ImageTk
