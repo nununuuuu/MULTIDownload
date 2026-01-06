@@ -192,8 +192,10 @@ class YtDlpCore:
                 if total is None:
                     downloaded_mb = downloaded / 1024 / 1024
                     speed = self._remove_ansi(d.get('_speed_str', 'N/A'))
-                    # Live Mode
-                    if progress_callback: progress_callback(-1, f"直播錄製中: {downloaded_mb:.1f}MB", speed, "Live")
+                    
+                    # 區分 直播 vs 普通不定長度下載
+                    status_text = f"直播錄製中: {downloaded_mb:.1f}MB" if d.get('is_live') else f"下載中: {downloaded_mb:.1f}MB"
+                    if progress_callback: progress_callback(-1, status_text, speed, "Live")
                 else:
                     progress = downloaded / total
                     speed = self._remove_ansi(d.get('_speed_str', 'N/A'))
@@ -326,19 +328,20 @@ class YtDlpCore:
             })
         
         if config.get('add_metadata'):
-            # 強制加入 Metadata 處理器 (必須在 EmbedThumbnail 之後)
             opts['postprocessors'].append({
                 'key': 'FFmpegMetadata',
                 'add_chapters': True,
                 'add_metadata': True,
             })
-            # [Optimization] Windows 檔案總管通常讀取 'artist' 而非 'uploader'
-            # 這裡強制將 uploader 映射為 artist
-            # 並使用正則表達式精確提取 upload_date 的前四碼 (YYYY) 作為年份，解決 slicing 可能的格式問題
+
+            # 這次我們用更明確的 regex 命名群組來修復
             opts['parse_metadata'] = [
-                {'from': 'uploader', 'to': 'artist'},
-                {'from': '%(upload_date)s', 'regex': r'^(\d{4})', 'to': 'date'},
-                {'from': 'description', 'to': 'comment'},
+                'uploader:artist',
+                'description:comment',
+                # 這裡很關鍵：我們強制從 upload_date 提取前四位數字給 date 標籤
+                'upload_date:(?P<date>^(\d{4}))',
+                # 同時也給 year 標籤，確保雙重保險
+                'upload_date:(?P<year>^(\d{4}))',
             ]
 
         if config.get('sponsorblock'): 
@@ -437,24 +440,40 @@ class YtDlpCore:
             opts['merge_output_format'] = config['ext']
 
 
-            if "AAC" in config.get('audio_codec', ''):
-                cmd_args = ['-c:v', 'copy', '-c:a', 'aac']
-
-                if target_bitrate and target_bitrate.isdigit():
-                     cmd_args.extend(['-b:a', f'{target_bitrate}k'])
-
-                opts['postprocessor_args'] = {'merger': cmd_args}
+            # 只有在非裁剪模式下才強制串流複製 (裁剪時為了精確度應允許 re-encode)
+            if not config['use_time_range']:
+                merger_args = []
+                if "AAC" in config.get('audio_codec', ''):
+                    merger_args = ['-c:v', 'copy', '-c:a', 'aac']
+                    if target_bitrate and target_bitrate.isdigit():
+                         merger_args.extend(['-b:a', f'{target_bitrate}k'])
+                elif target_bitrate:
+                    merger_args = ['-c:v', 'copy', '-c:a', 'libopus', '-b:a', f'{target_bitrate}k']
+                
+                if merger_args:
+                    if 'postprocessor_args' not in opts: opts['postprocessor_args'] = {}
+                    if 'Merger' not in opts['postprocessor_args']: opts['postprocessor_args']['Merger'] = []
+                    opts['postprocessor_args']['Merger'].extend(merger_args)
             else:
-                pass
-                if target_bitrate:
-                     opts['postprocessor_args'] = {'merger': ['-c:v', 'copy', '-c:a', 'libopus', '-b:a', f'{target_bitrate}k']}
+                # 裁剪模式：強制全部重新編碼 (Video+Audio) 以修復嚴重的时间軸問题
+                # 下載部分片段時，Steam Copy 容易導致影音不同步或後段無聲
+                # 重編碼雖然較慢，但能確保檔案完整性
+                if 'postprocessor_args' not in opts: opts['postprocessor_args'] = {}
+                if 'Merger' not in opts['postprocessor_args']: opts['postprocessor_args']['Merger'] = []
+                
+                # 使用 libx264 (通用) + aac，並加上 -preset ultrafast 加速處理
+                opts['postprocessor_args']['Merger'].extend([
+                    '-c:v', 'libx264', '-preset', 'ultrafast', 
+                    '-c:a', 'aac', '-b:a', '192k'
+                ])
 
         # 3. 其他功能 (裁剪/字幕/直播)
         if config['use_time_range']:
             opts['download_ranges'] = yt_dlp.utils.download_range_func(
                 None, [(self._parse_time(config['start_time']), self._parse_time(config['end_time']))]
             )
-            opts['force_keyframes_at_cuts'] = True
+            # 關閉強制關鍵影格切割 (配合上述全重編碼，不需要此選項，且此選項常導致 Bug)
+            opts['force_keyframes_at_cuts'] = False
 
         if config['sub_langs']:
             should_write = not config.get('embed_subs', False)

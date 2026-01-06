@@ -379,6 +379,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
         # Theme
         theme = default_config.get("theme", "System")
+        self.user_selected_theme = theme
         ctk.set_appearance_mode(theme)
 
     def save_config(self):
@@ -416,7 +417,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 "monitor_clipboard": self.var_clipboard.get() if hasattr(self, 'var_clipboard') else False,
                 "enable_notification": self.var_notification.get() if hasattr(self, 'var_notification') else True,
                 "auto_update": self.var_auto_update.get() if hasattr(self, 'var_auto_update') else True,
-                "theme": ctk.get_appearance_mode()
+                "theme": getattr(self, "user_selected_theme", "System")
             }
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -657,6 +658,8 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             # Live Stream Settings
             'live_wait': self.var_live_wait.get() if hasattr(self, 'var_live_wait') else False,
             'live_from_start': self.var_live_from_start.get() if hasattr(self, 'var_live_from_start') else True,
+            'live_autostop': self.var_live_autostop.get() if hasattr(self, 'var_live_autostop') else False,
+            'live_stop_min': self.var_live_stop_min.get() if hasattr(self, 'var_live_stop_min') else "60",
             
             # Scheduler
             'schedule_enabled': self.var_schedule_enable.get() if hasattr(self, 'var_schedule_enable') else False,
@@ -881,9 +884,15 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 log_callback=self.log,
                 finish_callback=on_bg_finish
             )
+            # [Fix] 強制聚焦再清空，確保可以觸發 FocusOut 恢復 Placeholder
+            try: 
+                self.entry_url.focus_set()
+            except: pass
             self.entry_url.delete(0, "end")
             self.entry_filename.delete(0, "end")
             self.clear_subtitle_ui()
+            self.update_thumbnail(None)
+            self.focus_set()
             
             self.select_frame("Tasks")
             self.task_segmented.set("進行中")
@@ -901,10 +910,14 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         if hasattr(self, 'seg_tasks'): self.seg_tasks.set("進行中")
         self.switch_task_view("進行中")
         
-        # 清空輸入
+        # [Fix] 強制聚焦再清空
+        try: self.entry_url.focus_set()
+        except: pass
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
         self.clear_subtitle_ui()
+        self.update_thumbnail(None)
+        self.focus_set()
 
 
 
@@ -1229,6 +1242,18 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                       self.switch_task_view("進行中")
                  
                  self.log(f"啟動排程任務: {config['url']}")
+                 
+                 # Setup Auto Stop Timer
+                 if config.get('live_autostop', False):
+                     try:
+                         mins = float(config.get('live_stop_min', 60))
+                         delay_ms = int(mins * 60 * 1000)
+                         if delay_ms > 0:
+                             timer_id = self.after(delay_ms, lambda: self._perform_auto_stop(task_id))
+                             self.active_queue_tasks[task_id]['autostop_timer'] = timer_id
+                             self.log(f"[{task_id}] 已設定自動停止，將於 {mins} 分鐘後結束錄製。")
+                     except Exception as e:
+                         print(f"AutoStop Init Error: {e}")
              
              self.after(0, _ui_logic)
              
@@ -1333,19 +1358,32 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     self.progress_bar.stop()
                     self.progress_bar.set(percent)
                 
-                # 更新狀態文字 (過濾掉合併訊息以免太快閃爍)
+                # 更新狀態文字
                 if "合併" in msg or "轉檔" in msg: 
-                    self.lbl_status.configure(text="合併轉檔中...")
+                    self.lbl_status.configure(text="合併轉檔中... (請稍候)")
+                elif percent == -1:
+                    # 不確定的進度 (e.g. 直播或處理中)
+                    self.lbl_status.configure(text=msg if msg else "處理中...")
                 else: 
-                    # 確保顯示格式一致 (User requested: 下載中 + Percentage)
+                    # 正常下載進度
                     self.lbl_status.configure(text=f"下載中 {int(percent * 100)}%")
                     
         except: pass
 
     def on_download_finished(self, success, msg, task_id, config):
+        # [Fix] 如果任務已不再佇列中 (例如已強制取消)，忽略此回調以避免重複處理
+        if task_id not in self.active_queue_tasks:
+            return
+
         current_status = 'unknown'
         if task_id in self.active_queue_tasks:
             current_status = self.active_queue_tasks[task_id].get('status', 'finished')
+
+        # Clean up Auto-Stop Timer if exists
+        if task_id in self.active_queue_tasks:
+            if 'autostop_timer' in self.active_queue_tasks[task_id]:
+                try: self.after_cancel(self.active_queue_tasks[task_id]['autostop_timer'])
+                except: pass
 
         if current_status == 'paused':
             self.log(f"[已暫停] {msg}")
@@ -1405,6 +1443,10 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 task_info['status'] = 'paused'
                 self.log(f"暫停任務: {task_info['config']['url']}")
                 try: 
+                    # Cancel Auto-Stop Timer if exists
+                    if 'autostop_timer' in task_info:
+                        try: self.after_cancel(task_info['autostop_timer'])
+                        except: pass
                     task_info['core'].stop_download()
                 except: pass
                 
@@ -1429,6 +1471,11 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         if task_id in self.active_queue_tasks:
              info = self.active_queue_tasks[task_id]
              
+             # Cancel Auto-Stop Timer if exists
+             if 'autostop_timer' in info:
+                 try: self.after_cancel(info['autostop_timer'])
+                 except: pass
+
              # 如果任務已暫停或核心未在運行，直接清理
              if info.get('status') == 'paused' or not info['core'].is_downloading:
                  info['status'] = 'cancelled'
@@ -1439,8 +1486,19 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              try: 
                 info['core'].stop_download()
              except: pass
-        elif task_id in self.bg_tasks:
+             
+             # [Optimization] 立即執行清理與 UI 移除，不必等待背景線程回應
+             # 因為已標記 cancelled 且 stop 後，背景線程的回調會因為 active_queue_tasks 檢查而被忽略
+             self.on_download_finished(False, "手動取消", task_id, info['config'])
+        if task_id in self.bg_tasks:
              self.stop_background_task(task_id)
+
+    def _perform_auto_stop(self, task_id):
+        """定時停止任務的回調"""
+        if task_id in self.active_queue_tasks:
+            self.log(f"[{task_id}] 定時錄製時間已到，正在停止...")
+            self.cancel_task(task_id)
+            self.show_toast("定時錄製已結束", f"任務 {task_id[:4]}... 已依排程停止")
              
     def stop_background_task(self, task_id):
         if task_id in self.bg_tasks:
@@ -1615,10 +1673,13 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     
                     # --- 版本比對邏輯 ---
                     def parse_version(v_str):
+                        import re
                         try:
-                            clean_v = v_str.lower().lstrip('v').strip()
-                            return tuple(map(int, clean_v.split('.')))
-                        except ValueError:
+                            # 使用正則表達式擷取所有數字序列，這允許靈活的版本號格式
+                            # 例如: 2026.01.06-1, 2026.01.06_fix1, 2026.01.06.v2 都能正確解析
+                            nums = re.findall(r'\d+', v_str)
+                            return tuple(map(int, nums)) if nums else (0, 0, 0)
+                        except:
                             return (0, 0, 0)
 
                     remote_ver = parse_version(latest_tag)

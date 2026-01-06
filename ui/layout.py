@@ -269,6 +269,89 @@ class AppLayoutMixin:
 
 
 
+
+
+    def reset_parameters(self):
+        # Format
+        if hasattr(self, 'combo_format'): self.combo_format.set("mp4 (影片+音訊)")
+        if hasattr(self, 'var_video_res'): self.var_video_res.set("Best (最高畫質)")
+        if hasattr(self, 'var_video_legacy'): self.var_video_legacy.set(False)
+        if hasattr(self, 'var_audio_only'): self.var_audio_only.set(False)
+        if hasattr(self, 'var_audio_qual'): self.var_audio_qual.set("Best (來源預設)")
+        if hasattr(self, 'var_audio_codec'): self.var_audio_codec.set("Auto (預設/Opus)")
+        if hasattr(self, 'var_embed_thumb'): self.var_embed_thumb.set(False)
+        if hasattr(self, 'var_embed_subs'): self.var_embed_subs.set(False)
+        if hasattr(self, 'var_metadata'): self.var_metadata.set(False)
+        if hasattr(self, 'var_sponsorblock'): self.var_sponsorblock.set(False)
+        if hasattr(self, 'var_add_timestamp'): self.var_add_timestamp.set(False) # Prevent Overwrite
+        
+        # Time Cut
+        if hasattr(self, 'var_cut'): self.var_cut.set(False)
+        if hasattr(self, 'entry_start'): 
+            self.entry_start.delete(0, "end")
+            self.entry_start.configure(state="disabled", placeholder_text="")
+        if hasattr(self, 'entry_end'): 
+            self.entry_end.delete(0, "end")
+            self.entry_end.configure(state="disabled", placeholder_text="")
+        if hasattr(self, 'btn_reset_time'): self.btn_reset_time.configure(state="disabled")
+        if hasattr(self, 'lbl_arrow'): self.lbl_arrow.configure(text_color="gray")
+
+        # Subtitles (Reset to False)
+        if hasattr(self, 'sub_checkboxes'):
+             for var in self.sub_checkboxes.values(): var.set(False)
+        if hasattr(self, 'pl_sub_vars'):
+             for var in self.pl_sub_vars.values(): var.set(False)
+        if hasattr(self, 'var_sub_manual'): self.var_sub_manual.set(False)
+        if hasattr(self, 'entry_sub_manual'): 
+            self.entry_sub_manual.delete(0, "end")
+            self.entry_sub_manual.configure(state="disabled")
+        if hasattr(self, 'entry_sub_search'):
+            self.entry_sub_search.delete(0, "end")
+            if hasattr(self, '_on_sub_search_change'): self._on_sub_search_change()
+
+        # Filename
+        if hasattr(self, 'entry_filename'): self.entry_filename.delete(0, "end")
+        
+        # Scheduler (Reset)
+        if hasattr(self, 'var_schedule_enable'): self.var_schedule_enable.set(False)
+        if hasattr(self, 'entry_schedule_time'): 
+             self.entry_schedule_time.delete(0, "end")
+             self.entry_schedule_time.insert(0, "0000")
+        
+        # After Completion (Reset to 'none')
+        if hasattr(self, 'var_after_completion'): 
+            self.var_after_completion.set("none")
+            if hasattr(self, 'lbl_after_hint'):
+                self.lbl_after_hint.configure(text="執行完畢後保持電腦開啟")
+            # Manually update visuals
+            if hasattr(self, 'after_btns'):
+                 for val, btn in self.after_btns.items():
+                    if val == "none":
+                         btn.configure(fg_color=("white", "#5A5A5A"), text_color=("#1F6AA5", "#88C0D0"), border_color=("#1F6AA5", "#88C0D0"), border_width=2)
+                    else:
+                         btn.configure(fg_color="transparent", text_color=("gray50", "gray70"), border_width=0)
+                         
+        # Independent Mode (False)
+        if hasattr(self, 'var_independent'): self.var_independent.set(False)
+        
+        # SponsorBlock Categories (Reset to Default True)
+        if hasattr(self, 'sb_vars'):
+             for var in self.sb_vars.values(): var.set(True)
+
+        # Refresh UI (Hints)
+        if hasattr(self, 'update_dynamic_hint'): self.update_dynamic_hint()
+        if hasattr(self, 'on_format_change'): self.on_format_change(self.combo_format.get())
+        
+        # Clear Focus and Notify
+        # Force focus to the main window to clear entry focus
+        def force_defocus():
+            self.focus_set()
+            if hasattr(self, 'entry_filename'): 
+                self.entry_filename.configure(placeholder_text="預設為影片原標題")
+        self.after(50, force_defocus)
+        
+        self.show_toast("參數已全部重置")
+
     def setup_basic_ui(self):
         if not hasattr(self, 'var_hardware_accel'): self.var_hardware_accel = ctk.BooleanVar(value=False)
         
@@ -295,6 +378,19 @@ class AppLayoutMixin:
                                        state="disabled", command=on_hw_toggle)
         self.switch_hw.pack(anchor="w")
         CTkToolTip(self.switch_hw, "使用顯示卡 GPU 加速合併與轉檔過程。\n自動偵測: NVIDIA, Intel, AMD, Apple (Mac)。")
+        
+        # Reset Params Button (Top Right)
+        btn_reset = ctk.CTkButton(self.tab_basic, text="⟲", width=36, height=36, 
+                                  font=("Arial", 16, "bold"),
+                                  fg_color=("gray85", "#2B2B2B"), 
+                                  text_color=("gray10", "gray90"), 
+                                  hover_color=("gray75", "#3A3A3A"),
+                                  border_width=2,
+                                  border_color=("gray60", "#484848"),
+                                  command=self.reset_parameters)
+        btn_reset.place(relx=0.97, rely=0.02, anchor="ne")
+
+
 
         # --- Absolute Vertical Centering Layout ---
         self.tab_basic.grid_rowconfigure(0, weight=1)
@@ -684,6 +780,8 @@ class AppLayoutMixin:
         # Init Variables
         if not hasattr(self, 'var_live_wait'): self.var_live_wait = ctk.BooleanVar(value=False)
         if not hasattr(self, 'var_live_from_start'): self.var_live_from_start = ctk.BooleanVar(value=True)
+        if not hasattr(self, 'var_live_autostop'): self.var_live_autostop = ctk.BooleanVar(value=False)
+        if not hasattr(self, 'var_live_stop_min'): self.var_live_stop_min = ctk.StringVar(value="60")
 
         # --- Card 1: 智慧等待 ---
         wait_content = create_live_card(center_box, "智慧等待 (Smart Wait)", icon="📡")
@@ -700,6 +798,24 @@ class AppLayoutMixin:
                               font=(self.font_family, 13, "bold"), progress_color="#2CC985", button_hover_color="#20A068", height=32)
         s_rec.pack(anchor="w", padx=10, pady=8)
         CTkToolTip(s_rec, "僅對直播連結有效。\n若您在直播中途才開始錄製，嘗試抓取錯過的開頭片段。")
+
+        # --- Sub-feature: Auto Stop ---
+        stop_frame = ctk.CTkFrame(rec_content, fg_color="transparent")
+        stop_frame.pack(fill="x", padx=10, pady=(0, 8))
+        
+        def toggle_stop_entry():
+             state = "normal" if self.var_live_autostop.get() else "disabled"
+             self.entry_live_stop.configure(state=state)
+             
+        s_stop = ctk.CTkSwitch(stop_frame, text="啟用定時停止 (Auto Stop)", variable=self.var_live_autostop, 
+                               font=(self.font_family, 13, "bold"), progress_color="#2CC985", button_hover_color="#20A068",
+                               command=toggle_stop_entry, height=32)
+        s_stop.pack(side="left")
+        
+        self.entry_live_stop = ctk.CTkEntry(stop_frame, textvariable=self.var_live_stop_min, width=60, height=28, state="disabled")
+        self.entry_live_stop.pack(side="left", padx=10)
+        
+        ctk.CTkLabel(stop_frame, text="分鐘後停止", font=(self.font_family, 12), text_color="gray").pack(side="left")
 
         # --- Note ---
         note_box = ctk.CTkFrame(center_box, fg_color="transparent")
@@ -1212,6 +1328,20 @@ class AppLayoutMixin:
              if is_on:
                  self.entry_start.configure(placeholder_text="000000")
                  self.entry_end.configure(placeholder_text="000500")
+             else:
+                 self.entry_start.configure(state="normal") # Temporary unlock to clear
+                 self.entry_start.delete(0, "end")
+                 self.entry_start.configure(placeholder_text="")
+                 
+                 self.entry_end.configure(state="normal")
+                 self.entry_end.delete(0, "end")
+                 self.entry_end.configure(placeholder_text="")
+                 
+                 # Re-apply disabled state will happen by caller? No, caller set it above.
+                 # Wait, line 1323 set it to disabled.
+                 # So I need to set it back to disabled at the end.
+                 self.entry_start.configure(state="disabled")
+                 self.entry_end.configure(state="disabled")
              
         self.chk_cut = ctk.CTkCheckBox(cut_card, text="啟用時間裁切 (下載部分片段)", font=("Microsoft JhengHei UI", 14, "bold"), variable=self.var_cut, command=toggle_cut)
         self.chk_cut.pack(anchor="w", pady=(5, 15))
@@ -1840,11 +1970,10 @@ class AppLayoutMixin:
 
         def on_theme_click(mode_name):
             self.change_appearance_mode_event(mode_name)
+            self.user_selected_theme = mode_name
+            
             # Manually update visuals
-            for title, code, icon in self.theme_opts:
-                btn = self.theme_btns.get(code)
-                if not btn: continue
-                
+            for code, btn in self.theme_btns.items():
                 if code == mode_name:
                     btn.configure(
                         fg_color=("white", "#5A5A5A"), 
@@ -1866,7 +1995,7 @@ class AppLayoutMixin:
         theme_seg_bg.grid_columnconfigure(1, weight=1)
         theme_seg_bg.grid_columnconfigure(2, weight=1)
         
-        current_mode = ctk.get_appearance_mode()
+        current_mode = getattr(self, 'user_selected_theme', 'System')
         
         for i, (title, code, icon) in enumerate(self.theme_opts):
             btn = ctk.CTkButton(
@@ -1882,7 +2011,7 @@ class AppLayoutMixin:
             btn.grid(row=0, column=i, padx=4, pady=4, sticky="ew")
             self.theme_btns[code] = btn
             
-            # Check for initial match (approximate)
+            # Check for initial match
             if code == current_mode:
                 btn.configure(
                     fg_color=("white", "#5A5A5A"), 
@@ -1890,9 +2019,12 @@ class AppLayoutMixin:
                     border_color=("#1F6AA5", "#88C0D0"),
                     border_width=1
                 )
-            elif code == "System" and current_mode not in ["Light", "Dark"]:
-                 # Just in case
-                 pass
+            else:
+                btn.configure(
+                     fg_color="transparent", 
+                     text_color=("gray30", "gray70"),
+                     border_width=0
+                )
 
         # Divider
         ctk.CTkFrame(container, height=1, fg_color=("gray90", "#404040")).pack(fill="x")
@@ -1947,7 +2079,7 @@ class AppLayoutMixin:
         reset_frame.pack(fill="x", padx=30, pady=20)
         ctk.CTkButton(
             reset_frame, 
-            text="清理暫存與重置",
+            text="重置預設",
             font=("Microsoft JhengHei UI", 15, "bold"), 
             fg_color="transparent", 
             border_width=1,
@@ -1959,18 +2091,38 @@ class AppLayoutMixin:
         ).pack(fill="x")
 
     def clear_cache_and_reset(self):
-        """清理暫存並重啟"""
+        """重置設定頁面"""
         try:
              import tkinter.messagebox as messagebox
-             if messagebox.askyesno("確認", "確定要刪除設定檔與暫存並重啟嗎？\n(所有偏好設定將會流失)"):
-                if os.path.exists(self.config_file):
-                    os.remove(self.config_file)
-                try:
-                    self.show_toast("正在重啟...", duration=2000)
-                    self.after(1000, lambda: self.restart_app())
-                except: pass
+             if messagebox.askyesno("重置設定", "確定要重置此頁面的所有設定嗎？\n(包含主題與功能開關)"):
+                # 1. 重置變數
+                if hasattr(self, 'var_clipboard'): self.var_clipboard.set(False)
+                if hasattr(self, 'var_notification'): self.var_notification.set(True)
+                if hasattr(self, 'var_auto_start'): self.var_auto_start.set(False)
+                if hasattr(self, 'var_auto_update'): self.var_auto_update.set(True)
+                if hasattr(self, 'var_always_on_top'): self.var_always_on_top.set(False)
+                if hasattr(self, 'attributes'): self.attributes("-topmost", False)
+
+                # 2. 重置主題
+                self.user_selected_theme = "System"
+                ctk.set_appearance_mode("System")
+                
+                # 更新按鈕樣式
+                if hasattr(self, 'theme_btns'):
+                    for code, btn in self.theme_btns.items():
+                        if code == "System":
+                           btn.configure(fg_color=("white", "#5A5A5A"), text_color=("#1F6AA5", "#88C0D0"), border_color=("#1F6AA5", "#88C0D0"), border_width=1)
+                        else:
+                           btn.configure(fg_color=("gray90", "gray30"), text_color=("gray10", "gray90"), border_color="transparent", border_width=0)
+
+                # 3. 儲存
+                if hasattr(self, 'save_config'): self.save_config()
+                
+                self.update_idletasks()
+                self.show_toast("設定已重置", duration=1500)
+                
         except Exception as e:
-             print(f"Clear cache error: {e}")
+             print(f"Reset config error: {e}")
 
     def restart_app(self):
         """重新啟動應用程式"""

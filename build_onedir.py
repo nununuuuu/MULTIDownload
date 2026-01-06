@@ -26,15 +26,40 @@ def build():
             with open(const_file, "r", encoding="utf-8") as f:
                 content = f.read()
             
-            # 尋找 APP_VERSION = "..." 並替換
-            new_content = re.sub(r'APP_VERSION\s*=\s*["\'].*?["\']', f'APP_VERSION = "{new_ver}"', content)
+            # 尋找 APP_VERSION = "..." 
+            match = re.search(r'APP_VERSION\s*=\s*["\'](.*?)["\']', content)
+            if match:
+                existing_ver = match.group(1)
+                
+                # 自動遞增邏輯
+                if existing_ver.startswith(new_ver):
+                    # 同一天: 檢查是否有 _v 後綴
+                    suffix_match = re.search(r'_v(\d+)$', existing_ver)
+                    if suffix_match:
+                        # 已有 _vN，則 N+1
+                        current_num = int(suffix_match.group(1))
+                        next_num = current_num + 1
+                        final_ver = re.sub(r'_v\d+$', f'_v{next_num}', existing_ver)
+                        print(f"★ 當日重新打包，版本號自動遞增: {existing_ver} -> {final_ver}")
+                    else:
+                        # 無後綴，加上 _v2
+                        final_ver = f"{existing_ver}_v2"
+                        print(f"★ 當日重新打包，新增版本後綴: {existing_ver} -> {final_ver}")
+                else:
+                    # 不同天: 重置為今日日期
+                    final_ver = new_ver
+                    print(f"★ 日期變更，重置版本號為: {final_ver}")
+            else:
+                final_ver = new_ver
+
+            # 執行替換
+            new_content = re.sub(r'APP_VERSION\s*=\s*["\'].*?["\']', f'APP_VERSION = "{final_ver}"', content)
             
             if content != new_content:
                 with open(const_file, "w", encoding="utf-8") as f:
                     f.write(new_content)
-                print(f"★ 已自動更新版本號為: {new_ver}")
             else:
-                print(f"版本號已是最新: {new_ver}")
+                pass
         except Exception as e:
             print(f"⚠ 更新版本號失敗: {e}")
     # ----------------------------
