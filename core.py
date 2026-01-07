@@ -47,7 +47,8 @@ class YtDlpCore:
                     'duration': info.get('duration_string'),
                     'uploader': info.get('uploader'),
                     'is_live': info.get('is_live', False),
-                    'subtitles': list(set(list(info.get('subtitles', {}).keys()) + list(info.get('automatic_captions', {}).keys())))
+                    'subtitles': list(set(list(info.get('subtitles', {}).keys()) + list(info.get('automatic_captions', {}).keys()))),
+                    'http_headers': info.get('http_headers', {})
                 }
         except Exception as e:
             return {'error': str(e)}
@@ -62,8 +63,9 @@ class YtDlpCore:
             'skip_download': True, 
             'quiet': True, 
             'no_warnings': True,
-            'extract_flat': True, 
+            'extract_flat': False, # Disable flat extraction to ensure we get full metadata (titles)
             'noplaylist': False,
+            'ignoreerrors': True,
         }
         if user_agent: ydl_opts['user_agent'] = user_agent
         if proxy: ydl_opts['proxy'] = proxy
@@ -78,6 +80,9 @@ class YtDlpCore:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+                if not info:
+                    raise Exception("無法有效獲取清單資訊 (info is None)")
+                    
                 entries_data = []
                 if 'entries' in info:
                     for idx, entry in enumerate(info['entries']):
@@ -93,10 +98,24 @@ class YtDlpCore:
                 count = len(entries_data)
                 if not count and info.get('playlist_count'): count = info.get('playlist_count')
                 
+                # Try to get playlist thumbnail
+                thumb = info.get('thumbnail')
+                if not thumb and info.get('thumbnails'):
+                    try: thumb = info['thumbnails'][-1].get('url')
+                    except: pass
+                
+                # Fallback: Take first video's thumbnail if accessible
+                if not thumb and entries_data:
+                    first_entry = info['entries'][0] if info.get('entries') else None
+                    if first_entry:
+                        thumb = first_entry.get('thumbnail')
+
                 return {
                     'title': info.get('title', '未知播放清單'),
+                    'thumbnail': thumb,
                     'count': count,
-                    'items': entries_data
+                    'items': entries_data,
+                    'http_headers': info.get('http_headers', {})
                 }
         except Exception as e:
             return {'error': str(e)}
@@ -334,14 +353,18 @@ class YtDlpCore:
                 'add_metadata': True,
             })
 
-            # 這次我們用更明確的 regex 命名群組來修復
+            # [Fix] 使用 Raw String 確保正則表達式被正確解析
+            # 針對 upload_date (YYYYMMDD) 提取前四碼 (年份)
             opts['parse_metadata'] = [
                 'uploader:artist',
                 'description:comment',
-                # 這裡很關鍵：我們強制從 upload_date 提取前四位數字給 date 標籤
-                'upload_date:(?P<date>^(\d{4}))',
-                # 同時也給 year 標籤，確保雙重保險
-                'upload_date:(?P<year>^(\d{4}))',
+                r'upload_date:(?P<date>^\d{4})',
+                r'upload_date:(?P<year>^\d{4})',
+                r'upload_date:(?P<meta_date>^\d{4})',
+                # 若有原始發行日期 (release_date)，優先使用
+                r'release_date:(?P<date>^\d{4})',
+                r'release_date:(?P<year>^\d{4})',
+                r'release_date:(?P<meta_date>^\d{4})',
             ]
 
         if config.get('sponsorblock'): 

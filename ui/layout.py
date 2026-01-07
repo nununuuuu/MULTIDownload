@@ -2,13 +2,11 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageOps
 import threading
+import time
 import webbrowser
 import sys
 import os
-import time
 import subprocess
-import random
-import re
 
 
 try:
@@ -210,6 +208,29 @@ class AppLayoutMixin:
 
     # ================= UI 建構區 =================
 
+    def _create_section_card(self, parent, title, icon="⚙️"):
+        """共用的卡片建立函式 (Pack 佈局)"""
+        # 使用 #454545 作為深色模式背景
+        frame = ctk.CTkFrame(parent, fg_color=("gray95", "#454545"), corner_radius=15)
+        frame.pack(fill="x", pady=10, padx=10)
+        
+        # Header
+        header = ctk.CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(15, 10))
+        
+        ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 18)).pack(side="left", padx=(0, 10))
+        
+        # [Font Fix] 修改為 Microsoft JhengHei UI 以匹配其他舊有卡片的視覺
+        # 之前的重構使用了 self.font_family (可能指向 Arial 或其他)，導致視覺差異
+        title_font = ("Microsoft JhengHei UI", 16, "bold")
+        
+        ctk.CTkLabel(header, text=title, font=title_font, text_color=("gray20", "gray90")).pack(side="left")
+        
+        # Content Container
+        content = ctk.CTkFrame(frame, fg_color="transparent")
+        content.pack(fill="x", padx=20, pady=(0, 20))
+        return content
+
     def setup_bottom_controls(self):
         # 底部控制區放在 main_view 的第二列 (row=1)
         self.bottom_frame = ctk.CTkFrame(self.main_view, fg_color="transparent", height=60)
@@ -406,7 +427,7 @@ class AppLayoutMixin:
         ctk.CTkFrame(island_frame, width=720, height=0, fg_color="transparent").pack()
         
         # --- Thumbnail Preview Card (Above Search) ---
-        self.preview_card = ctk.CTkFrame(island_frame, fg_color=("white", "#2B2B2B"), corner_radius=12, border_width=1, border_color=("#1F6AA5", "#1F6AA5"))
+        self.preview_card = ctk.CTkFrame(island_frame, fg_color=("white", "#454545"), corner_radius=12, border_width=1, border_color=("#1F6AA5", "#1F6AA5"))
         
         # Inner Layout
         self.preview_card.grid_columnconfigure(1, weight=1)
@@ -465,7 +486,7 @@ class AppLayoutMixin:
 
 
         # --- 2. Settings Section (Modern Card) ---
-        settings_card = ctk.CTkFrame(island_frame, fg_color=("white", "#232323"), corner_radius=15, border_width=1, border_color=("#E5E5E5", "#333333"))
+        settings_card = ctk.CTkFrame(island_frame, fg_color=("white", "#454545"), corner_radius=15, border_width=1, border_color=("#E5E5E5", "#333333"))
         settings_card.pack(fill="x", pady=(10, 10))
         
         # Settings Content
@@ -579,7 +600,7 @@ class AppLayoutMixin:
 
         # Helper: Create Card
         def create_card(parent, title, icon, row, col, columnspan=1):
-            frame = ctk.CTkFrame(parent, fg_color=("gray95", "gray20"), corner_radius=15)
+            frame = ctk.CTkFrame(parent, fg_color=("gray95", "#454545"), corner_radius=15)
             frame.grid(row=row, column=col, sticky="nsew", padx=10, pady=10, columnspan=columnspan)
             
             # Header
@@ -761,7 +782,7 @@ class AppLayoutMixin:
 
         # --- Helper for Cards (Standard Style) ---
         def create_live_card(parent, title, icon="⚙️"):
-            card = ctk.CTkFrame(parent, fg_color=("gray95", "gray20"), corner_radius=15)
+            card = ctk.CTkFrame(parent, fg_color=("gray95", "#454545"), corner_radius=15)
             card.pack(fill="x", pady=10)
             
             # Header
@@ -1293,7 +1314,7 @@ class AppLayoutMixin:
 
         # --- Helper: Section Card ---
         def create_section_card(parent, title, icon="⚙️"):
-            frame = ctk.CTkFrame(parent, fg_color=("gray95", "gray20"), corner_radius=15)
+            frame = ctk.CTkFrame(parent, fg_color=("gray95", "#454545"), corner_radius=15)
             frame.pack(fill="x", pady=10, padx=10)
             
             # Header
@@ -1498,7 +1519,7 @@ class AppLayoutMixin:
         
         # --- Helper: Section Card ---
         def create_section_card(parent, title, icon="⚙️"):
-            frame = ctk.CTkFrame(parent, fg_color=("gray95", "gray20"), corner_radius=15)
+            frame = ctk.CTkFrame(parent, fg_color=("gray95", "#454545"), corner_radius=15)
             frame.pack(fill="x", pady=10, padx=10)
             
             # Header
@@ -1558,7 +1579,7 @@ class AppLayoutMixin:
                     btn.configure(
                         fg_color=("white", "#333333"), 
                         text_color=("gray20", "gray80"), 
-                        border_width=1, 
+                        border_width=2, 
                         border_color=("gray70", "gray50"),
                         hover_color=("gray90", "#404040") 
                     )
@@ -1571,7 +1592,7 @@ class AppLayoutMixin:
                 font=self.font_text,
                 corner_radius=16,
                 fg_color=("white", "#333333"), 
-                border_width=1,
+                border_width=2,
                 border_color=("gray70", "gray50"),
                 text_color=("gray20", "gray80"),
                 hover_color=("gray90", "#404040"), 
@@ -1743,10 +1764,7 @@ class AppLayoutMixin:
     def show_changelog(self):
         """讀取並顯示 CHANGELOG.md (最近 1 次更新)"""
         try:
-            import sys
             import re
-            import os
-            import tkinter as tk 
             import textwrap 
             
             # --- Changelog Loading Logic ---
@@ -1875,13 +1893,13 @@ class AppLayoutMixin:
             toolbar, text="🗑 清空", width=80, height=30, 
             fg_color="transparent", border_width=1, border_color="#DB3E39", text_color="#DB3E39",
             hover_color=("#FEE", "#400"), 
-            font=self.font_small, command=clear_logs_action
+            font=(self.font_family, 13, "bold"), command=clear_logs_action
         ).pack(side="right", padx=5)
 
         ctk.CTkButton(
             toolbar, text="📋 複製全部", width=90, height=30, 
             fg_color="#1F6AA5", hover_color="#144870", 
-            font=self.font_small, command=copy_logs
+            font=(self.font_family, 13, "bold"), command=copy_logs
         ).pack(side="right", padx=5)
 
         # 2. Log Console (Dark Theme Terminal)
@@ -1941,7 +1959,7 @@ class AppLayoutMixin:
         self.settings_scroll.pack(fill="both", expand=True)
 
         # Main Container
-        container = ctk.CTkFrame(self.settings_scroll, fg_color=("gray95", "gray20"), corner_radius=12)
+        container = ctk.CTkFrame(self.settings_scroll, fg_color=("gray95", "#454545"), corner_radius=12)
         container.pack(fill="x", padx=20, pady=20)
         
         # --- 1. Top Section ---

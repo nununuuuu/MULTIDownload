@@ -1,4 +1,4 @@
-# MULTIDownload (2026/01/03)
+# MULTIDownload (2026/01/07)
 
 MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發的現代化桌面下載工具，結合了 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 打造的美觀介面。專為解決複雜指令操作而生，提供從單曲到整張歌單的流暢下載體驗。
 
@@ -7,6 +7,10 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
 ---
 
 ## 核心特色
+
+### 直覺拖曳操作 (New)
+- **拖曳新增**：支援直接將網址從瀏覽器或文字編輯器拖曳至視窗任意位置。
+- **智慧解析**：放開後自動填入網址並觸發分析，支援自動修補網址格式 (如 `youtube.com` -> `https://youtube.com`)，操作更流暢。
 
 ### 智慧核心管理 (Auto-Core)
 - **自動安裝**：首次執行時若偵測不到 `yt-dlp` 核心，程式會自動引導您下載。

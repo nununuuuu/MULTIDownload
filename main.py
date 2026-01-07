@@ -11,12 +11,11 @@ import time
 from datetime import datetime, timedelta
 import webbrowser
 import requests 
-import zipfile
 import io
-import shutil
 from PIL import Image
 
 import json
+from tkinterdnd2 import TkinterDnD, DND_ALL
 
 # Refactored Imports
 from constants import APP_VERSION, GITHUB_REPO, DEFAULT_APPEARANCE_MODE, CODE_TO_NAME
@@ -99,11 +98,12 @@ class PlaylistSelectionDialog(ctk.CTkToplevel):
         self.result = selected_indices
         self.destroy()
 
-class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
+class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
     setup_custom_titlebar = setup_custom_titlebar # [UI] Attach Method
 
     def __init__(self):
         super().__init__()
+        self.TkdndVersion = TkinterDnD._require(self) # Init TkinterDnD
         self.title("MULTIDownload")
         self.geometry("900x780") 
         
@@ -252,6 +252,12 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
         # Global Click Binding to dismiss focus
         self.bind("<Button-1>", self._bg_click_handler)
+        
+        # --- Drag & Drop ---
+        self.drop_target_register(DND_ALL)
+        self.dnd_bind('<<Drop>>', self._on_drop)
+        
+        # --- Config & Data Management ---
         
         # --- Config & Data Management ---
         self.data_dir = os.path.join(app_path, "data")
@@ -441,17 +447,63 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         
     def _bg_click_handler(self, event):
         """點擊空白處取消輸入框焦點"""
+        # 如果點擊的是輸入框本身 (Entry/Text)，不做動作
+        if isinstance(event.widget, (tk.Entry, tk.Text, ctk.CTkEntry)):
+            return
+        
+        # 檢查 class name 字串 (因為 CTk 元件底層可能是 Entry)
         try:
-            # 取得點擊的元件類別
-            w = event.widget
-            cls = w.winfo_class()
-            
-            # 如果點擊的是輸入框本身 (Entry/Text)，不做動作
-            if "Entry" in cls or "Text" in cls:
-                return
-                
-            self.focus()
+            if hasattr(event.widget, 'winfo_class'):
+                cls = event.widget.winfo_class()
+                if "Entry" in cls or "Text" in cls:
+                    return
         except: pass
+            
+        self.focus()
+
+    def _on_drop(self, event):
+        """處理拖曳事件 (Drop Handler)"""
+        data = event.data
+        if not data: return
+        
+        # 處理資料 (移除大括號 {}) - Windows DnD 有時會將內容包在大括號中
+        if data.startswith('{') and data.endswith('}'):
+            data = data[1:-1]
+            
+        # 預處理: 簡單修復缺少的 protocol
+        def fix_url(text):
+            text = text.strip()
+            # 1. Special case for youtube.com (force www)
+            if text.startswith("youtube.com"):
+                return "https://www." + text
+            
+            # 2. General case: Add https:// if protocol is missing
+            if not text.startswith("http://") and not text.startswith("https://"):
+                return "https://" + text
+            
+            return text
+
+        data = fix_url(data)
+
+        # 簡單驗證是否為 URL
+        if not (data.startswith("http://") or data.startswith("https://")):
+            # 嘗試過濾 (例如拖曳多個檔案時取第一個非空白行?)
+            lines = data.split('\n')
+            found = False
+            for line in lines:
+               line = fix_url(line)
+               if line.startswith("http://") or line.startswith("https://"):
+                   data = line
+                   found = True
+                   break
+            if not found:
+                 self.show_toast("僅支援網址拖曳", duration=2000, color="gray30")
+                 return
+        
+        self.log(f"[拖曳] 偵測到網址: {data}")
+        self.entry_url.delete(0, "end")
+        self.entry_url.insert(0, data)
+        self.on_fetch_info() # 自動執行分析 (但不直接下載，讓使用者確認)
 
     def safe_open_path(self, path):
          if os.path.exists(path): os.startfile(path)
@@ -469,7 +521,11 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         c_path = self.entry_cookie_path.get().strip()
 
         # Playlist Detection
-        if "list=" in url:
+        # Enhanced detection for YouTube (list=) and Bilibili (series, season, collection, cb, etc.)
+        is_generic_list = "list=" in url
+        is_bili_list = "bilibili" in url and any(x in url for x in ["series", "season", "collection", "cb", "favlist"])
+        
+        if is_generic_list or is_bili_list:
             is_playlist = messagebox.askyesno("播放清單偵測", "偵測到此網址包含播放清單\n\n是否要下載『整張歌單』\n(選擇「否」將僅下載此影片)")
             self.var_playlist.set(is_playlist)
             
@@ -504,6 +560,9 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 self.show_toast(f"清單分析完成 ({count} 部影片)")
                 self.log(f"已獲取清單: {title} (共 {count} 部)")
                 
+                # Update thumbnail for playlist
+                self.update_thumbnail(info)
+
                 if 'items' in info and info['items']:
                     self.pending_playlist_info = info
                     self.show_toast("清單已就緒！\n設定格式後->「加入任務」", duration=4000)
@@ -563,11 +622,23 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
              self.preview_card.pack_forget()
              return
 
+        # [Fix] 防止「分析完成」比「加入任務」晚發生，導致已清空的介面又跳出舊縮圖
+        # 如果輸入框已經被清空，就忽略這次的縮圖更新
+        if not self.entry_url.get().strip():
+            return
+
         url = info.get('thumbnail')
         title = info.get('title', 'Unknown')
         duration = info.get('duration') # e.g. "3:45"
         uploader = info.get('uploader')
         
+        
+        # Reset Thumbnail first (to avoid stale image if new one fails)
+        if hasattr(self, 'lbl_thumb_img'):
+            self.lbl_thumb_img.configure(image=None, text="") 
+            # Force update to clear immediate visual
+            self.lbl_thumb_img.update_idletasks()
+
         # Update Text Info immediately (Auto wrap handle by UI)
         self.lbl_preview_title.configure(text=title)
         
@@ -585,7 +656,22 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
 
         def _fetch():
             try:
-                resp = requests.get(url, timeout=5)
+                # Use headers from yt-dlp info as base
+                headers = info.get('http_headers', {}).copy()
+                
+                # Default UA if missing
+                if 'User-Agent' not in headers:
+                    headers['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+
+                # Bilibili Special Handling for Thumbnails (hdslb.com)
+                # Force Referer to main site, not the specific video page which might trigger anti-hotlink on some CDNs
+                if "bilibili" in url or "hdslb" in url:
+                    headers['Referer'] = "https://www.bilibili.com/"
+                elif 'Referer' not in headers:
+                     # Generic fallback
+                     headers['Referer'] = "https://www.youtube.com/" if "youtube" in url else ""
+
+                resp = requests.get(url, headers=headers, timeout=5)
                 if resp.status_code == 200:
                     data = io.BytesIO(resp.content)
                     pil_img = Image.open(data)
@@ -597,17 +683,22 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                     
                     # Create CTkImage with explicit corner radius support in Label? 
                     # CTkImage handles resizing.
+                    print(f"DEBUG: Creating CTkImage with size ({w_size}, {base_height})")
                     ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w_size, base_height))
                     
                     def _ui():
+                        print("DEBUG: Updating UI with new image")
                         if hasattr(self, 'lbl_thumb_img'):
                              self.lbl_thumb_img.configure(image=ctk_img, text="", width=w_size)
                              self.lbl_thumb_img.image = ctk_img # Keep reference
+                             print("DEBUG: Image configured successfully")
                     self.after(0, _ui)
                 else:
-                    pass
+                    print(f"Thumbnail Request Failed: {resp.status_code}")
             except Exception as e:
                 print(f"Thumbnail Error: {e}")
+                import traceback
+                traceback.print_exc()
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -761,15 +852,21 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             
             self.entry_url.delete(0, "end")
             self.entry_filename.delete(0, "end")
+            
             self.clear_subtitle_ui()
+            self.update_thumbnail(None) # Reset thumbnail for playlist too 
+            
             self.var_playlist.set(False) 
             self.on_playlist_toggle() 
+            
+            # Explicitly defocus BEFORE switching view to ensure placeholder reappears
+            self.focus_set()
             
             self.update_queue_ui()
             
             self.select_frame("Tasks")
-            self.task_segmented.set("等待中")
-            self.switch_task_view("等待中")
+            self.seg_tasks.set("等待中")
+            self.switch_task_view("等待中") 
             
             return
 
@@ -788,17 +885,13 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.show_toast("任務加入成功")
         
         # 清空輸入與重置分析狀態
-        # 強制聚焦再清空，確保 FocusOut 事件能正確觸發 Placeholder 重置
-        try: self.entry_url.focus_set()
-        except: pass
-        
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
         
         self.clear_subtitle_ui() 
         self.update_thumbnail(None)
         
-        # 轉移焦點至主視窗
+        # 轉移焦點至主視窗 (立即執行，確保 Placeholder 重置)
         self.focus_set() 
 
     def _auto_fetch_title(self, config):
@@ -827,36 +920,106 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.after(0, self.update_queue_ui)
 
     def show_toast(self, message, duration=2000, color="#01814A"):
-        """顯示跟隨視窗的通知 (使用 Button 模擬圓角 Toast)"""
+        """顯示頂層懸浮通知 (使用 Toplevel + Transparent Color 實現真去背圓角)"""
+        # 銷毀舊的 toast
         if hasattr(self, 'current_toast') and self.current_toast:
             try: self.current_toast.destroy()
             except: pass
-            
-        # Use CTkButton for reliable rounded corners
-        toast = ctk.CTkButton(
-            self, 
-            text=message, 
-            fg_color=color, 
-            hover_color=color, # Disable hover effect
-            bg_color=("gray86", "gray17"), # Match standard Frame background to hide corners
-            corner_radius=22, 
-            width=220, 
+
+        # 1. 建立 Toplevel 視窗
+        top = ctk.CTkToplevel(self)
+        top.overrideredirect(True) # 無邊框
+        top.attributes("-topmost", True) # 最上層
+        
+        # 避免搶走焦點
+        top.attributes("-alpha", 0.0) # 先隱藏，定好位再顯示
+        
+        # 2. 設定透明色 (Windows 特有解法)
+        # 改用接近黑色的去背色 (#000001)，這樣就算閃爍也比較不明顯
+        transparent_color = "#000001"
+        try:
+            if os.name == 'nt':
+                top.attributes("-transparentcolor", transparent_color)
+                top.configure(fg_color=transparent_color) 
+            else:
+                # 非 Windows 系統退回一般透明
+                top.configure(fg_color="gray10") 
+        except: pass
+        
+        # 3. 建立圓角內容
+        # 注意: bg_color 必須設為上述的 transparent_color
+        toast_btn = ctk.CTkButton(
+            top,
+            text=message,
+            fg_color=color,
+            bg_color=transparent_color, 
+            hover_color=color, # 禁用 hover
+            corner_radius=22,
+            width=240,
             height=45,
             font=(self.font_family, 13, "bold"),
-            text_color="white"
+            text_color="white",
+            command=lambda: top.destroy()
         )
-        self.current_toast = toast 
-        
-        # Position: Top Right (Relative to Window)
-        toast.place(relx=1.0, x=-20, y=50, anchor="ne")
-        toast.lift()
-        
-        def close_toast():
-            if hasattr(self, 'current_toast') and self.current_toast == toast:
-                try: toast.destroy()
-                except: pass
+        toast_btn.pack(fill="both", expand=True)
+
+        # 4. 計算顯示位置 (右上角)
+        try:
+            # 確保幾何數據最新
+            self.update_idletasks()
+            mw_x = self.winfo_x()
+            mw_y = self.winfo_y()
+            mw_w = self.winfo_width()
             
-        self.after(duration, close_toast)
+            # x = 主視窗X + 寬度 - Toast寬(240) - padding(20)
+            # y = 主視窗Y + padding(60)
+            tx = mw_x + mw_w - 260 
+            ty = mw_y + 60
+            
+            top.geometry(f"240x45+{tx}+{ty}")
+        except:
+             top.geometry("240x45")
+
+        # 顯示
+        top.attributes("-alpha", 1.0)
+        self.current_toast = top
+
+        # 5. 自動關閉與淡出動畫
+        def start_fade_out():
+            try:
+                if not top.winfo_exists(): return
+                
+                # 簡易淡出
+                alpha = top.attributes("-alpha")
+                if alpha > 0.0:
+                    alpha -= 0.1
+                    top.attributes("-alpha", alpha)
+                    self.after(30, start_fade_out)
+                else:
+                    top.destroy()
+                    if self.current_toast == top: self.current_toast = None
+            except: pass
+            
+        self.after(duration, start_fade_out)
+
+        # 6. [Update] 讓 Toast 跟隨主視窗移動 (Fixed to Window)
+        def _sync_pos(event=None):
+            if not top.winfo_exists(): return
+            try:
+                # 只有當移動的是主視窗本身才更新
+                if event and event.widget != self: return
+                
+                mw_x = self.winfo_x()
+                mw_y = self.winfo_y()
+                mw_w = self.winfo_width()
+                
+                tx = mw_x + mw_w - 260 
+                ty = mw_y + 60
+                top.geometry(f"240x45+{tx}+{ty}")
+            except: pass
+        
+        # Bind configure event to main window
+        self.bind("<Configure>", _sync_pos, add="+")
 
     def on_start_download(self):
         config = self.get_config_from_ui()
@@ -884,10 +1047,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
                 log_callback=self.log,
                 finish_callback=on_bg_finish
             )
-            # [Fix] 強制聚焦再清空，確保可以觸發 FocusOut 恢復 Placeholder
-            try: 
-                self.entry_url.focus_set()
-            except: pass
+            # 清空輸入與重置分析狀態
             self.entry_url.delete(0, "end")
             self.entry_filename.delete(0, "end")
             self.clear_subtitle_ui()
@@ -895,7 +1055,7 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
             self.focus_set()
             
             self.select_frame("Tasks")
-            self.task_segmented.set("進行中")
+            self.seg_tasks.set("進行中")
             self.switch_task_view("進行中")
             return
 
@@ -909,15 +1069,15 @@ class App(ctk.CTk, AppLayoutMixin, TaskLayoutMixin):
         self.select_frame("Tasks")
         if hasattr(self, 'seg_tasks'): self.seg_tasks.set("進行中")
         self.switch_task_view("進行中")
-        
-        # [Fix] 強制聚焦再清空
-        try: self.entry_url.focus_set()
-        except: pass
+
+        # 清空輸入與重置分析狀態 (與加入任務保持一致)
         self.entry_url.delete(0, "end")
         self.entry_filename.delete(0, "end")
         self.clear_subtitle_ui()
         self.update_thumbnail(None)
         self.focus_set()
+        
+
 
 
 

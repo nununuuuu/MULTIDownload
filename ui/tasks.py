@@ -1,9 +1,4 @@
 import customtkinter as ctk
-import time
-import threading
-import requests
-import io
-from PIL import Image
 from tkinter import messagebox
 from ui.tooltip import CTkToolTip
 
@@ -172,18 +167,27 @@ class TaskLayoutMixin:
             # Download Selected Button
             self.btn_download_selected = ctk.CTkButton(
                 ctrl_frame, text="下載選取項目", fg_color="#01814A", hover_color="#006030", 
-                font=("Microsoft JhengHei UI", 15, "bold"),
+                font=("Microsoft JhengHei UI", 13, "bold"),
                 height=30, corner_radius=20, state="disabled",
                 command=self.start_selected_queue
             )
             self.btn_download_selected.pack(side="left", padx=(15, 5))
+
+            # Delete Selected Button
+            self.btn_remove_selected = ctk.CTkButton(
+                ctrl_frame, text="刪除選取項目", fg_color="#DB3E39", hover_color="#8B0000", 
+                font=("Microsoft JhengHei UI", 13, "bold"),
+                height=30, corner_radius=20, state="disabled",
+                command=self.remove_selected_queue
+            )
+            self.btn_remove_selected.pack(side="right", padx=(5, 5))
             
             # Initial state check
             self.after(50, self.update_select_all_state)
         
         for i, config in enumerate(self.download_queue):
             # Card Style
-            row = ctk.CTkFrame(self.view_waiting, fg_color=("white", "#2B2B2B"), corner_radius=8,
+            row = ctk.CTkFrame(self.view_waiting, fg_color=("white", "#454545"), corner_radius=8,
                                border_width=1, border_color=("gray85", "#3A3A3A"))
             row.pack(fill="x", pady=4, padx=10)
             
@@ -212,9 +216,10 @@ class TaskLayoutMixin:
             if len(display_name) > 60: display_name = display_name[:57] + "..."
             
             # [UX Improvement] 讓整個卡片都可以點擊選取
-            def _toggle_row(event=None):
-                new_val = not var.get()
-                var.set(new_val)
+            # Fix closure issue: must bind 'var' as default arg
+            def _toggle_row(event=None, v=var):
+                new_val = not v.get()
+                v.set(new_val)
                 self.update_select_all_state()
             
             row.bind("<Button-1>", _toggle_row)
@@ -286,6 +291,35 @@ class TaskLayoutMixin:
                     text="下載選取項目"
                 )
 
+        if hasattr(self, 'btn_remove_selected'):
+            if selected_count > 0:
+                self.btn_remove_selected.configure(
+                    state="normal",
+                    text=f"刪除選取項目 （{selected_count}）"
+                )
+            else:
+                self.btn_remove_selected.configure(
+                    state="disabled",
+                    text="刪除選取項目"
+                )
+
+    def remove_selected_queue(self):
+        """批量刪除選中的任務，不彈窗確認 (UX Fast Action)"""
+        indices = [i for i, var in enumerate(self.queue_vars) if var.get()]
+        if not indices: return
+            
+        indices.sort(reverse=True)
+        
+        # Remove from queue
+        for i in indices:
+            if i < len(self.download_queue):
+                self.download_queue.pop(i)
+        
+        # Update UI
+        self.update_queue_ui()
+        # Update UI
+        self.update_queue_ui()
+
     def start_selected_queue(self):
         indices = [i for i, var in enumerate(self.queue_vars) if var.get()]
         if not indices: return
@@ -315,14 +349,14 @@ class TaskLayoutMixin:
 
     def create_active_task_widget(self, task_id, config, initial_status="準備中..."):
         # Card style
-        row = ctk.CTkFrame(self.view_active, fg_color=("white", "#2B2B2B"), corner_radius=8,
+        row = ctk.CTkFrame(self.view_active, fg_color=("white", "#454545"), corner_radius=8,
                            border_width=1, border_color=("gray85", "#3A3A3A"))
         row.pack(fill="x", pady=4, padx=10)
         
         self.lbl_active_empty.place_forget()
         self.active_task_widgets[task_id] = {'frame': row}
 
-        self.active_task_widgets[task_id] = {'frame': row}
+
 
         # 1. Right Side: Cancel Button (Fixed)
         btn_cancel = ctk.CTkButton(row, text="✘", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#440000"),
@@ -437,7 +471,7 @@ class TaskLayoutMixin:
         self.lbl_finished_empty.place_forget()
         
         # Card
-        row = ctk.CTkFrame(self.view_finished, fg_color=("white", "#2B2B2B"), corner_radius=8,
+        row = ctk.CTkFrame(self.view_finished, fg_color=("white", "#454545"), corner_radius=8,
                            border_width=1, border_color=("gray85", "#3A3A3A"))
         row.pack(fill="x", pady=4, padx=10)
         
