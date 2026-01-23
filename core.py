@@ -5,6 +5,12 @@ import time
 from datetime import datetime
 import sys
 import glob
+import shutil
+import subprocess
+
+# Constants
+SUPPORTED_BROWSERS = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi', 'chromium']
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 class YtDlpCore:
     def __init__(self):
@@ -26,8 +32,7 @@ class YtDlpCore:
         if proxy: ydl_opts['proxy'] = proxy
 
         # 支援多種瀏覽器 Cookie 讀取
-        supported_browsers = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi', 'chromium']
-        if cookie_type in supported_browsers:
+        if cookie_type in SUPPORTED_BROWSERS:
             ydl_opts['cookiesfrombrowser'] = (cookie_type, )
         elif cookie_type == 'file' and cookie_path:
             if os.path.exists(cookie_path):
@@ -70,8 +75,7 @@ class YtDlpCore:
         if user_agent: ydl_opts['user_agent'] = user_agent
         if proxy: ydl_opts['proxy'] = proxy
 
-        supported_browsers = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi', 'chromium']
-        if cookie_type in supported_browsers:
+        if cookie_type in SUPPORTED_BROWSERS:
             ydl_opts['cookiesfrombrowser'] = (cookie_type, )
         elif cookie_type == 'file' and cookie_path:
             if os.path.exists(cookie_path):
@@ -125,8 +129,6 @@ class YtDlpCore:
         accel_types = []
         try:
             # 尋找 ffmpeg
-            ffmpeg_path = "ffmpeg"
-            import shutil
             if not shutil.which("ffmpeg"):
                 # 嘗試本地目錄
                 try: 
@@ -139,7 +141,6 @@ class YtDlpCore:
                 except: pass
             
             # 執行偵測
-            import subprocess
             cmd = [ffmpeg_path, "-hide_banner", "-encoders"]
             # Windows 隱藏視窗
             startupinfo = None
@@ -179,8 +180,7 @@ class YtDlpCore:
         self.download_thread.start()
 
     def _remove_ansi(self, text):
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        return ansi_escape.sub('', text)
+        return ANSI_ESCAPE.sub('', text)
 
     def _progress_hook(self, d, progress_callback, log_callback, title_callback=None):
         try:
@@ -251,7 +251,6 @@ class YtDlpCore:
             ffmpeg_loc = script_dir
             
         # --- FFmpeg 狀態診斷與回報 ---
-        import subprocess
         check_path = None
         if ffmpeg_loc:
             check_path = os.path.join(ffmpeg_loc, 'ffmpeg.exe')
@@ -279,7 +278,6 @@ class YtDlpCore:
                 else: source_desc = "本地 (程式根目錄)"
                 path_desc = ffmpeg_loc
             else:
-                import shutil
                 sys_p = shutil.which("ffmpeg")
                 if sys_p: path_desc = sys_p
 
@@ -404,8 +402,7 @@ class YtDlpCore:
 
 
         # Cookie 設定
-        supported_browsers = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi', 'chromium']
-        if config['cookie_type'] in supported_browsers:
+        if config['cookie_type'] in SUPPORTED_BROWSERS:
             opts['cookiesfrombrowser'] = (config['cookie_type'], )
         elif config['cookie_type'] == 'file' and config['cookie_path']:
             opts['cookiefile'] = config['cookie_path']

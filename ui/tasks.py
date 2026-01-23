@@ -246,14 +246,14 @@ class TaskLayoutMixin:
 
             # Remove Button
             ctk.CTkButton(
-                row, text="✘", width=36, height=36, fg_color="transparent", hover_color=("#FFEEEE", "#440000"), text_color="red", 
+                row, text="✘", width=36, height=36, fg_color="transparent", hover_color=("#FFEEEE", "#FFADAD"), text_color="red", 
                 font=("Arial", 16), corner_radius=18,
                 command=lambda idx=i: self.remove_from_queue(idx)
             ).pack(side="right", padx=(5, 15))
 
             # Single Download Button
             ctk.CTkButton(
-                row, text="⭣", width=36, height=36, fg_color="transparent", hover_color=("#E5F9E7", "#1B5E20"), text_color="#2E7D32", 
+                row, text="⭣", width=36, height=36, fg_color="transparent", hover_color=("#E5F9E7", "#B1EDB7"), text_color="#2E7D32", 
                 font=("Arial", 18, "bold"), corner_radius=18,
                 command=lambda idx=i: self.start_single_task(idx)
             ).pack(side="right", padx=0)
@@ -317,8 +317,6 @@ class TaskLayoutMixin:
         
         # Update UI
         self.update_queue_ui()
-        # Update UI
-        self.update_queue_ui()
 
     def start_selected_queue(self):
         indices = [i for i, var in enumerate(self.queue_vars) if var.get()]
@@ -359,7 +357,7 @@ class TaskLayoutMixin:
 
 
         # 1. Right Side: Cancel Button (Fixed)
-        btn_cancel = ctk.CTkButton(row, text="✘", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#440000"),
+        btn_cancel = ctk.CTkButton(row, text="✘", width=36, height=36, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#FFADAD"),
                                    font=("Arial", 16), corner_radius=18,
                                    command=lambda: self.cancel_task(task_id))
         btn_cancel.pack(side="right", padx=(5, 10))
@@ -521,5 +519,5 @@ class TaskLayoutMixin:
              ctk.CTkButton(action_frame, text="開啟", width=60, height=30, font=self.font_small, fg_color=("gray90", "gray30"), text_color=("black", "white"), hover_color=("gray80", "gray40"),
                            command=lambda p=save_path: self.safe_open_path(p)).pack(side="left", padx=5)
         
-        ctk.CTkButton(action_frame, text="✘", width=30, height=30, fg_color="transparent", text_color="gray", hover_color=("#FFEEEE", "#440000"),
+        ctk.CTkButton(action_frame, text="✘", width=30, height=30, fg_color="transparent", text_color="red", hover_color=("#FFEEEE", "#FFADAD"),
                       command=lambda w=row: w.destroy()).pack(side="left", padx=5)

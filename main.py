@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 import webbrowser
 import requests 
 import io
+import zipfile
+import shutil
 from PIL import Image
 
 import json
@@ -42,61 +44,7 @@ try:
 except ImportError:
     yt_dlp = None
 
-# ==========================================
-# 播放清單選擇視窗 (嵌入)
-# ==========================================
-class PlaylistSelectionDialog(ctk.CTkToplevel):
-    def __init__(self, parent, title, items):
-        super().__init__(parent)
-        self.title("選取下載項目")
-        self.geometry("500x600")
-        self.result = None
-        
-        # Make modal
-        self.transient(parent)
-        self.grab_set()
-        
-        # Title
-        ctk.CTkLabel(self, text=f"清單: {title}", font=("Microsoft JhengHei UI", 14, "bold"), wraplength=450).pack(pady=10)
-        ctk.CTkLabel(self, text="請勾選要下載的項目 (預設全選)", text_color="gray").pack()
-        
-        # Scrollable List
-        self.scroll = ctk.CTkScrollableFrame(self)
-        self.scroll.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.vars = {}
-        for item in items:
-            idx = item['index']
-            t = item['title']
-            if len(t) > 40: t = t[:38] + ".."
-            
-            var = ctk.BooleanVar(value=True)
-            self.vars[idx] = var
-            chk = ctk.CTkCheckBox(self.scroll, text=f"{idx}. {t}", variable=var, font=("Microsoft JhengHei UI", 12))
-            chk.pack(anchor="w", pady=2)
-            
-        # Buttons
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=10)
-        
-        ctk.CTkButton(btn_frame, text="全選", width=80, command=self.select_all).pack(side="left")
-        ctk.CTkButton(btn_frame, text="全取消", width=80, command=self.deselect_all).pack(side="left", padx=10)
-        
-        ctk.CTkButton(btn_frame, text="確定", fg_color="#01814A", hover_color="#006030", command=self.on_confirm).pack(side="right")
-        
-    def select_all(self):
-        for var in self.vars.values(): var.set(True)
-        
-    def deselect_all(self):
-        for var in self.vars.values(): var.set(False)
-        
-    def on_confirm(self):
-        selected_indices = [idx for idx, var in self.vars.items() if var.get()]
-        if not selected_indices:
-            messagebox.showwarning("警告", "請至少選擇一個項目")
-            return
-        self.result = selected_indices
-        self.destroy()
+from ui.dialogs import PlaylistSelectionDialog
 
 class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
     setup_custom_titlebar = setup_custom_titlebar # [UI] Attach Method
@@ -257,9 +205,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         self.drop_target_register(DND_ALL)
         self.dnd_bind('<<Drop>>', self._on_drop)
         
-        # --- Config & Data Management ---
-        
-        # --- Config & Data Management ---
+
         self.data_dir = os.path.join(app_path, "data")
         if not os.path.exists(self.data_dir):
             try:
@@ -296,17 +242,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
              self.after(0, lambda: self._update_hw_ui(accels))
         threading.Thread(target=_task, daemon=True).start()
 
-    def _update_hw_ui(self, accels):
-        if not hasattr(self, 'switch_hw'): return
-        
-        if accels:
-             best = accels[0]
-             self.detected_gpu = best
-             self.switch_hw.configure(state="normal", text=f"啟用硬體加速 ({best})")
-        else:
-             self.detected_gpu = None
-             self.switch_hw.configure(state="disabled", text="未偵測到相容 GPU (硬體加速不可用)")
-             self.var_hardware_accel.set(False)
+
 
     def load_config(self):
         """讀取設定檔並應用到 UI"""
@@ -613,94 +549,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         if messagebox.askyesno("直播偵測", "此連結為直播/首播影片。\n\n是否前往【直播設定】頁面檢查：\n1. 智慧等待 (Smart Wait)\n2. 錄製策略 (DVR)\n\n(若設定已確認可按「否」繼續)"):
             self.select_frame("Live")
 
-    def update_thumbnail(self, info):
-        """非同步下載並顯示縮圖與資訊"""
-        if not hasattr(self, 'preview_card'): return
-        
-        # Reset if no info
-        if not info:
-             self.preview_card.pack_forget()
-             return
 
-        # [Fix] 防止「分析完成」比「加入任務」晚發生，導致已清空的介面又跳出舊縮圖
-        # 如果輸入框已經被清空，就忽略這次的縮圖更新
-        if not self.entry_url.get().strip():
-            return
-
-        url = info.get('thumbnail')
-        title = info.get('title', 'Unknown')
-        duration = info.get('duration') # e.g. "3:45"
-        uploader = info.get('uploader')
-        
-        
-        # Reset Thumbnail first (to avoid stale image if new one fails)
-        if hasattr(self, 'lbl_thumb_img'):
-            self.lbl_thumb_img.configure(image=None, text="") 
-            # Force update to clear immediate visual
-            self.lbl_thumb_img.update_idletasks()
-
-        # Update Text Info immediately (Auto wrap handle by UI)
-        self.lbl_preview_title.configure(text=title)
-        
-        meta_parts = []
-        if uploader: meta_parts.append(uploader)
-        if duration: meta_parts.append(duration)
-        if not meta_parts: meta_parts.append("Ready")
-        self.lbl_preview_meta.configure(text=" • ".join(meta_parts))
-
-        # Show Card
-        # Pack before search bar (input_bar master)
-        self.preview_card.pack(side="top", pady=(0, 10), fill="x", padx=10, before=self.entry_url.master.master)
-
-        if not url: return
-
-        def _fetch():
-            try:
-                # Use headers from yt-dlp info as base
-                headers = info.get('http_headers', {}).copy()
-                
-                # Default UA if missing
-                if 'User-Agent' not in headers:
-                    headers['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-
-                # Bilibili Special Handling for Thumbnails (hdslb.com)
-                # Force Referer to main site, not the specific video page which might trigger anti-hotlink on some CDNs
-                if "bilibili" in url or "hdslb" in url:
-                    headers['Referer'] = "https://www.bilibili.com/"
-                elif 'Referer' not in headers:
-                     # Generic fallback
-                     headers['Referer'] = "https://www.youtube.com/" if "youtube" in url else ""
-
-                resp = requests.get(url, headers=headers, timeout=5)
-                if resp.status_code == 200:
-                    data = io.BytesIO(resp.content)
-                    pil_img = Image.open(data)
-                    
-                    # Fixed target: height 68
-                    base_height = 68
-                    w_percent = (base_height / float(pil_img.size[1]))
-                    w_size = int((float(pil_img.size[0]) * float(w_percent)))
-                    
-                    # Create CTkImage with explicit corner radius support in Label? 
-                    # CTkImage handles resizing.
-                    print(f"DEBUG: Creating CTkImage with size ({w_size}, {base_height})")
-                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w_size, base_height))
-                    
-                    def _ui():
-                        print("DEBUG: Updating UI with new image")
-                        if hasattr(self, 'lbl_thumb_img'):
-                             self.lbl_thumb_img.configure(image=ctk_img, text="", width=w_size)
-                             self.lbl_thumb_img.image = ctk_img # Keep reference
-                             print("DEBUG: Image configured successfully")
-                    self.after(0, _ui)
-                else:
-                    print(f"Thumbnail Request Failed: {resp.status_code}")
-            except Exception as e:
-                print(f"Thumbnail Error: {e}")
-                import traceback
-                traceback.print_exc()
-
-        threading.Thread(target=_fetch, daemon=True).start()
 
     def get_config_from_ui(self):
         url = self.entry_url.get().strip()
@@ -735,7 +584,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             'cookie_type': self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none',
             'cookie_path': self.entry_cookie_path.get().strip(),
             'user_agent': self.entry_ua.get().strip() if hasattr(self, 'entry_ua') else None,
-            'proxy': self.var_proxy.get() if hasattr(self, 'var_proxy') else None,
+            'proxy': self.entry_proxy.get().strip() if hasattr(self, 'entry_proxy') else None,
             'add_timestamp': self.var_add_timestamp.get() if hasattr(self, 'var_add_timestamp') else False,
             'is_live': False,
 
