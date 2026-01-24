@@ -1619,7 +1619,11 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                     
                     # 解壓到暫存資料夾
                     temp_extract_dir = os.path.join(app_path, "_temp_yt_dlp")
-                    if os.path.exists(temp_extract_dir): shutil.rmtree(temp_extract_dir)
+                    if os.path.exists(temp_extract_dir):
+                        try:
+                            shutil.rmtree(temp_extract_dir)
+                        except: pass
+
                     os.makedirs(temp_extract_dir)
                     
                     update_status("解壓原始碼...")
@@ -1636,7 +1640,11 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                                 if not os.path.exists(target_dir): os.makedirs(target_dir)
                                 # 如果目標已存在 yt_dlp，先移除
                                 target_pkg = os.path.join(target_dir, 'yt_dlp')
-                                if os.path.exists(target_pkg): shutil.rmtree(target_pkg)
+                                if os.path.exists(target_pkg):
+                                    try:
+                                        shutil.rmtree(target_pkg)
+                                    except: pass
+
                                 
                                 # 移動
                                 shutil.move(src_pkg, target_dir)
@@ -1644,7 +1652,10 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                                 break
                     
                     # 清理暫存
-                    shutil.rmtree(temp_extract_dir)
+                    try:
+                        shutil.rmtree(temp_extract_dir)
+                    except: pass
+
                     
                     if found_pkg:
                         on_install_success("GitHub")
@@ -1833,14 +1844,19 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            self.show_toast("更新準備中: 正在安裝更新，程式將自動重啟...", duration=5000, color="#1F6AA5")
+            self.show_toast("正在安裝更新，程式將自動重啟...", duration=5000, color="#1F6AA5")
             
             current_exe = os.path.basename(sys.executable)
             
             if is_zip:
                 # 1. 解壓至暫存區
                 extract_dir = "_update_temp"
-                if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
+                if os.path.exists(extract_dir):
+                    try:
+                        shutil.rmtree(extract_dir)
+                    except Exception as e:
+                        print(f"Warning: Cleanup failed: {e}") 
+
                 os.makedirs(extract_dir)
                 
                 with zipfile.ZipFile(filename, 'r') as z:
