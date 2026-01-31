@@ -8,6 +8,8 @@ import sys
 import os
 import subprocess
 import random
+
+import tkinter as tk
 from constants import APP_VERSION, GITHUB_REPO
 
 
@@ -22,6 +24,8 @@ from ui.sections.video_format import VideoFormatMixin
 from ui.sections.live import LiveStreamMixin
 from ui.sections.subtitle import SubtitleMixin
 from ui.sections.settings import AdvancedSettingsMixin
+# 若有 CODE_TO_NAME 需求，補上一個空字典（或正確來源）
+CODE_TO_NAME = {}
 
 class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleMixin, AdvancedSettingsMixin):
 
