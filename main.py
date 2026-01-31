@@ -274,6 +274,9 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             if hasattr(self, 'on_cookie_mode_change'): 
                 self.on_cookie_mode_change()
                 self.after(100, lambda: self._update_browser_btn_visuals(mode))
+                # 更新貼上模式狀態
+                if mode == 'paste' and hasattr(self, '_update_paste_status'):
+                    self.after(150, self._update_paste_status)
 
         # 3. User Agent
         ua = default_config["user_agent"]
@@ -445,6 +448,18 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
          if os.path.exists(path): os.startfile(path)
          else: messagebox.showerror("錯誤", f"找不到路徑:\n{path}")
 
+    def _get_cookie_path_for_mode(self):
+        """根據 Cookie 模式取得正確的路徑"""
+        mode = self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none'
+        
+        if mode == 'file':
+            return self.entry_cookie_path.get().strip()
+        elif mode == 'paste':
+            # 貼上模式使用 data 目錄下的固定檔案
+            return os.path.join(self.data_dir, "pasted_cookies.txt")
+        else:
+            return ""
+
     def on_fetch_info(self):
         url = self.entry_url.get().strip()
         if not url: return messagebox.showerror("錯誤", "請輸入網址")
@@ -454,7 +469,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         proxy = self.entry_proxy.get().strip() if hasattr(self, 'entry_proxy') else None
         
         c_type = self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none'
-        c_path = self.entry_cookie_path.get().strip()
+        c_path = self._get_cookie_path_for_mode()
 
         # Playlist Detection
         # Enhanced detection for YouTube (list=) and Bilibili (series, season, collection, cb, etc.)
@@ -582,7 +597,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             'playlist_mode': self.var_playlist.get(),       
             'sub_langs': self.get_selected_subs(), 
             'cookie_type': self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none',
-            'cookie_path': self.entry_cookie_path.get().strip(),
+            'cookie_path': self._get_cookie_path_for_mode(),
             'user_agent': self.entry_ua.get().strip() if hasattr(self, 'entry_ua') else None,
             'proxy': self.entry_proxy.get().strip() if hasattr(self, 'entry_proxy') else None,
             'add_timestamp': self.var_add_timestamp.get() if hasattr(self, 'var_add_timestamp') else False,

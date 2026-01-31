@@ -899,6 +899,42 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
         self.btn_cookie_browse = ctk.CTkButton(f_input_box, text="瀏覽", width=80, height=35, state="disabled", fg_color="#555555", command=self.browse_cookie_file)
         self.btn_cookie_browse.pack(side="left")
 
+        # --- 貼上模式區塊 ---
+        paste_input_box = ctk.CTkFrame(cookie_card, fg_color="transparent")
+        paste_input_box.pack(fill="x", padx=10, pady=(10, 0))
+        
+        def on_paste_mode_click():
+            self.var_cookie_mode.set("paste")
+            self.on_cookie_mode_change()
+            update_browser_visuals()
+            if hasattr(self, 'save_config'): self.save_config()
+            
+        btn_paste_mode = ctk.CTkButton(
+            paste_input_box, text="貼上模式", width=100, height=32, corner_radius=16,
+            fg_color="transparent", border_width=1, border_color=("gray70", "gray50"), text_color=("gray20", "gray80"),
+            hover_color=("#D0E0F0", "#3A3A3A"),
+            command=on_paste_mode_click
+        )
+        btn_paste_mode.pack(side="left", padx=(0, 10))
+        self.browser_btns['paste'] = btn_paste_mode
+        
+        # 貼上狀態指示
+        self.lbl_paste_status = ctk.CTkLabel(
+            paste_input_box, 
+            text="尚未貼上 Cookie", 
+            font=self.font_small,
+            text_color=("gray50", "gray60")
+        )
+        self.lbl_paste_status.pack(side="left", padx=(0, 10))
+        
+        # 編輯/貼上按鈕
+        self.btn_cookie_paste = ctk.CTkButton(
+            paste_input_box, text="📋 貼上 Cookie", width=120, height=35, 
+            state="disabled", fg_color="#555555", 
+            command=self.open_cookie_paste_dialog
+        )
+        self.btn_cookie_paste.pack(side="right")
+
         # --- 2. 效能設定 (Performance) ---
         perf_card = create_section_card(scroll_container, "效能設定 (Performance)", icon="🚀")
         

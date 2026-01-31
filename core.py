@@ -37,6 +37,10 @@ class YtDlpCore:
         elif cookie_type == 'file' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+        elif cookie_type == 'paste' and cookie_path:
+            # 貼上模式：使用預設路徑的貼上 cookies
+            if os.path.exists(cookie_path):
+                ydl_opts['cookiefile'] = cookie_path
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -78,6 +82,9 @@ class YtDlpCore:
         if cookie_type in SUPPORTED_BROWSERS:
             ydl_opts['cookiesfrombrowser'] = (cookie_type, )
         elif cookie_type == 'file' and cookie_path:
+            if os.path.exists(cookie_path):
+                ydl_opts['cookiefile'] = cookie_path
+        elif cookie_type == 'paste' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
 
@@ -405,6 +412,8 @@ class YtDlpCore:
         if config['cookie_type'] in SUPPORTED_BROWSERS:
             opts['cookiesfrombrowser'] = (config['cookie_type'], )
         elif config['cookie_type'] == 'file' and config['cookie_path']:
+            opts['cookiefile'] = config['cookie_path']
+        elif config['cookie_type'] == 'paste' and config['cookie_path']:
             opts['cookiefile'] = config['cookie_path']
 
         # 1. 解析目標 Bitrate
