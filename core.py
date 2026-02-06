@@ -135,17 +135,26 @@ class YtDlpCore:
         """偵測可用的硬體加速器 (NVIDIA, Intel, AMD)"""
         accel_types = []
         try:
-            # 尋找 ffmpeg
-            if not shutil.which("ffmpeg"):
-                # 嘗試本地目錄
+            # [Fix] 確保 ffmpeg_path 在所有分支下都有值
+            ffmpeg_path = shutil.which("ffmpeg")
+            
+            # 若系統 PATH 找不到，嘗試本地目錄
+            if not ffmpeg_path:
                 try: 
                     base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
                     local_ffmpeg = os.path.join(base_dir, "ffmpeg.exe") 
-                    if os.path.exists(local_ffmpeg): ffmpeg_path = local_ffmpeg
+                    if os.path.exists(local_ffmpeg): 
+                        ffmpeg_path = local_ffmpeg
                     else: 
                         local_ffmpeg_bin = os.path.join(base_dir, "bin", "ffmpeg.exe")
-                        if os.path.exists(local_ffmpeg_bin): ffmpeg_path = local_ffmpeg_bin
-                except: pass
+                        if os.path.exists(local_ffmpeg_bin): 
+                            ffmpeg_path = local_ffmpeg_bin
+                except: 
+                    pass
+            
+            # 若仍找不到 ffmpeg，直接返回空列表
+            if not ffmpeg_path:
+                return accel_types
             
             # 執行偵測
             cmd = [ffmpeg_path, "-hide_banner", "-encoders"]
@@ -167,6 +176,7 @@ class YtDlpCore:
             pass 
             
         return accel_types
+
 
     def stop_download(self):
         self.stop_signal = True

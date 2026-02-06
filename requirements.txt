@@ -1,9 +1,14 @@
+# Core Dependencies
 customtkinter
 yt-dlp
 Pillow
 requests
 packaging
+
+# Build Tool
 pyinstaller
+
+# yt-dlp Dependencies (for hidden imports)
 mutagen
 brotli
 certifi
@@ -11,10 +16,12 @@ urllib3
 websockets
 curl_cffi
 pycryptodomex
-yt_dlp_ejs
-yt_dlp_ejs.yt
-yt_dlp_ejs.yt.solver
-secretstorage
-PIL
-PIL.Image
-PIL.ImageTk
+
+# Optional: yt-dlp EJS plugin (if used)
+# yt_dlp_ejs
+
+# Optional: Linux keyring support
+# secretstorage
+
+# Drag-and-drop support
+tkinterdnd2

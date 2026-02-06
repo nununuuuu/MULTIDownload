@@ -1874,12 +1874,20 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                 # 1. 解壓至暫存區
                 extract_dir = "_update_temp"
                 if os.path.exists(extract_dir):
-                    try:
-                        shutil.rmtree(extract_dir)
-                    except Exception as e:
-                        print(f"Warning: Cleanup failed: {e}") 
+                    # [Fix] 加入延遲重試機制，應對 Windows 檔案鎖定 (WinError 32)
+                    for attempt in range(3):
+                        try:
+                            shutil.rmtree(extract_dir)
+                            break
+                        except Exception as e:
+                            if attempt < 2:
+                                import time
+                                time.sleep(1)  # 等待 1 秒後重試
+                            else:
+                                print(f"Warning: Cleanup failed after 3 attempts: {e}")
 
                 os.makedirs(extract_dir)
+
                 
                 with zipfile.ZipFile(filename, 'r') as z:
                     z.extractall(extract_dir)
