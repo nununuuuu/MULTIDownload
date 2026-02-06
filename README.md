@@ -1,4 +1,4 @@
-# MULTIDownload (2026/01/07)
+# MULTIDownload (2026/02/07)
 
 MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發的現代化桌面下載工具，結合了 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 打造的美觀介面。專為解決複雜指令操作而生，提供從單曲到整張歌單的流暢下載體驗。
 
@@ -22,8 +22,8 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
 
 ### 應用程式熱更新 (Hot-Update)
 
-- **無痛升級**：支援透過 GitHub Release 直接推送更新。
-- **全量更新**：採用 Onedir 架構，支援下載更新包 (.zip) 並自動執行全資料夾覆蓋更新，讓您隨時享有最新功能。
+- **熱更新**：支援透過 GitHub Release 直接推送更新。
+- **全量更新**：支援下載更新包 (.zip) 並自動執行全資料夾覆蓋更新。
 
 ### 智慧歌單管理
 
@@ -73,7 +73,6 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
 
 ### 現代化自定義標題列
 
-- **標題列設計**：採用 True Frameless 無邊框技術，徹底移除原生標題列，視覺更簡潔。
 - **快速置頂**：標題列內建 📌 釘選按鈕，一鍵開啟/關閉視窗置頂，方便多工作業。
 
 ### 全新設定體驗
@@ -95,16 +94,6 @@ MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發�
 2. 解壓縮至任意資料夾 (內含 FFmpeg，無需額外安裝)。
 3. 雙擊 `MULTIDownload.exe` 即可使用。
 4. **首次執行**：若程式提示缺少核心，請點擊「確定」，程式將自動為您下載安裝。
-
-**專案結構說明：**
-
-- `main.py`: 程式入口與核心邏輯，包含熱更新與核心安裝模組。
-- `ui/`: 介面模組
-  - `layout.py`: 通用 UI 佈局。
-  - `tasks.py`: 任務列表與歷史紀錄 UI。
-  - `tooltip.py`: 懸浮提示元件。
-- `core.py`: yt-dlp 下載引擎封裝。
-- `constants.py`: 全域常數與語言代碼表。
 
 ---
 
