@@ -37,7 +37,7 @@ class AdvancedSettingsMixin:
         theme_box = ctk.CTkFrame(app_card, fg_color="transparent")
         theme_box.pack(fill="x", pady=5)
         
-        ctk.CTkLabel(theme_box, text="主題模式 (Theme)", font=self.font_title, text_color="gray").pack(side="left")
+        ctk.CTkLabel(theme_box, text="主題模式 (Theme)", font=self.font_title).pack(side="left")
         
         theme_seg_bg = ctk.CTkFrame(theme_box, fg_color=("gray90", "#1C1C1C"), corner_radius=10, height=40) 
         theme_seg_bg.pack(side="right")
@@ -110,13 +110,8 @@ class AdvancedSettingsMixin:
         if not hasattr(self, 'var_notification'): self.var_notification = ctk.BooleanVar(value=True)
         if not hasattr(self, 'var_auto_start'): self.var_auto_start = ctk.BooleanVar(value=False)
         if not hasattr(self, 'var_auto_update'): self.var_auto_update = ctk.BooleanVar(value=True)
-        if not hasattr(self, 'var_always_on_top'): self.var_always_on_top = ctk.BooleanVar(value=False)
         
         def _save(): 
-             # Apply Always on Top immediately
-             if hasattr(self, 'var_always_on_top'):
-                 self.attributes("-topmost", self.var_always_on_top.get())
-             
              if hasattr(self, 'save_config'): self.save_config()
 
         def _add_switch(title, var, desc):
@@ -133,11 +128,31 @@ class AdvancedSettingsMixin:
             
             ctk.CTkLabel(f, text=desc, font=(self.font_family, 12), text_color=("gray50", "gray60"), wraplength=500, justify="left").pack(anchor="w", pady=(2,0))
 
+        # Search Limit Slider
+        if not hasattr(self, 'var_search_limit'): self.var_search_limit = ctk.IntVar(value=20)
+
+        def _update_limit_label(value):
+            limit_lbl.configure(text=f"各平台搜尋結果數量：{int(value)}")
+            if hasattr(self, 'save_config'): self.save_config()
+
+        limit_frame = ctk.CTkFrame(app_card, fg_color="transparent")
+        limit_frame.pack(fill="x", pady=(15, 0))
+        
+        limit_top = ctk.CTkFrame(limit_frame, fg_color="transparent")
+        limit_top.pack(fill="x")
+        
+        limit_lbl = ctk.CTkLabel(limit_top, text=f"各平台搜尋結果數量：{self.var_search_limit.get()}", font=(self.font_family, 15, "bold"))
+        limit_lbl.pack(side="left")
+        
+        slider = ctk.CTkSlider(limit_frame, from_=5, to=50, number_of_steps=9, variable=self.var_search_limit, command=_update_limit_label, progress_color="#1F6AA5")
+        slider.pack(fill="x", pady=(5, 0))
+        
+        ctk.CTkLabel(limit_frame, text="設定各平台 (YouTube + Bilibili) 分別搜尋的數量。", font=(self.font_family, 12), text_color=("gray50", "gray60")).pack(anchor="w")
+
         _add_switch("監聽剪貼簿", self.var_clipboard, "若啟用，會自動檢測並搜尋剪貼簿中的影片連結。")
         _add_switch("通知系統", self.var_notification, "若啟用，下載完成時會發送系統通知。")
         _add_switch("自動開始下載", self.var_auto_start, "若啟用，新增任務後會自動開始下載。")
         _add_switch("自動檢查更新", self.var_auto_update, "啟動時檢查更新。")
-        _add_switch("視窗置頂", self.var_always_on_top, "保持視窗在所有視窗的最上層。")
 
         # Reset Button
         ctk.CTkFrame(scroll_container, height=1, fg_color=("gray90", "#404040")).pack(fill="x", pady=20)
@@ -282,7 +297,6 @@ class AdvancedSettingsMixin:
                 if hasattr(self, 'var_notification'): self.var_notification.set(True)
                 if hasattr(self, 'var_auto_start'): self.var_auto_start.set(False)
                 if hasattr(self, 'var_auto_update'): self.var_auto_update.set(True)
-                if hasattr(self, 'var_always_on_top'): self.var_always_on_top.set(False)
                 if hasattr(self, 'attributes'): self.attributes("-topmost", False)
 
                 # 2. 重置主題

@@ -318,8 +318,12 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
              hw_val = default_config.get("hardware_accel", "不使用 (CPU)")
              should_enable = (hw_val != "不使用 (CPU)")
              self.var_hardware_accel.set(should_enable)
+        
+        # 8. Search Limit
+        if hasattr(self, 'var_search_limit'):
+             self.var_search_limit.set(default_config.get("search_limit", 20))
 
-        # 8. Extra Settings
+        # 9. Extra Settings
         if hasattr(self, 'var_auto_start'): self.var_auto_start.set(default_config.get("auto_start_tasks", False))
         if hasattr(self, 'var_clipboard'): self.var_clipboard.set(default_config.get("monitor_clipboard", False))
         if hasattr(self, 'var_notification'): self.var_notification.set(default_config.get("enable_notification", True))
@@ -365,6 +369,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                 "monitor_clipboard": self.var_clipboard.get() if hasattr(self, 'var_clipboard') else False,
                 "enable_notification": self.var_notification.get() if hasattr(self, 'var_notification') else True,
                 "auto_update": self.var_auto_update.get() if hasattr(self, 'var_auto_update') else True,
+                "search_limit": self.var_search_limit.get() if hasattr(self, 'var_search_limit') else 20,
                 "theme": getattr(self, "user_selected_theme", "System")
             }
             with open(self.config_file, "w", encoding="utf-8") as f:
@@ -464,8 +469,19 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             return ""
 
     def on_fetch_info(self):
-        url = self.entry_url.get().strip()
-        if not url: return messagebox.showerror("錯誤", "請輸入網址")
+        text = self.entry_url.get().strip()
+        if not text: return messagebox.showerror("錯誤", "請輸入網址或關鍵字")
+        
+        # [New] 智能判斷：URL 或關鍵字
+        url_indicators = ["http://", "https://", "youtu.be", "bilibili", "b23.tv", ".com/", ".tv/", "watch?v="]
+        is_url = any(indicator in text.lower() for indicator in url_indicators)
+        
+        if not is_url:
+            # 觸發 YouTube 搜尋
+            self._trigger_search(text)
+            return
+        
+        url = text
         
         # Get UA & Cookie & Proxy safely
         ua = self.entry_ua.get().strip() if hasattr(self, 'entry_ua') else None
@@ -494,6 +510,68 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         self.log(f"正在分析: {url}")
         self.update_thumbnail(None) # Reset thumbnail
         threading.Thread(target=self._run_fetch, args=(url, c_type, c_path, ua, proxy), daemon=True).start()
+
+    def _trigger_search(self, query):
+        """觸發 YouTube 搜尋"""
+        self.show_toast(f"正在搜尋：{query}...", duration=5000, color="#1F6AA5")
+        self.log(f"搜尋 YouTube: {query}")
+        
+        # 取得設定
+        ua = self.entry_ua.get().strip() if hasattr(self, 'entry_ua') else None
+        proxy = self.entry_proxy.get().strip() if hasattr(self, 'entry_proxy') else None
+        c_type = self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none'
+        c_path = self._get_cookie_path_for_mode()
+        
+        threading.Thread(
+            target=self._run_search, 
+            args=(query, c_type, c_path, ua, proxy), 
+            daemon=True
+        ).start()
+
+    def _run_search(self, query, c_type, c_path, ua, proxy):
+        """背景執行搜尋"""
+        limit = self.var_search_limit.get() if hasattr(self, 'var_search_limit') else 20
+        result = self.core.search_videos(
+            query, 
+            max_results=limit, 
+            cookie_type=c_type, 
+            cookie_path=c_path,
+            user_agent=ua, 
+            proxy=proxy
+        )
+        
+        # 回到主線程處理結果
+        self.after(0, lambda: self._on_search_complete(query, result))
+
+    def _on_search_complete(self, query, result):
+        """搜尋完成後顯示彈窗"""
+        if 'error' in result and result['error']:
+            self.show_toast(f"搜尋失敗: {result['error']}", color="#D93025")
+            self.log(f"搜尋錯誤: {result['error']}")
+            return
+        
+        results = result.get('results', [])
+        
+        if not results:
+            self.show_toast("找不到相關影片", color="#F29900")
+            self.log(f"搜尋 '{query}' 無結果")
+            return
+        
+        self.show_toast(f"找到 {len(results)} 筆結果", color="#01814A")
+        
+        # 顯示搜尋結果彈窗
+        from ui.dialogs import SearchResultDialog
+        dialog = SearchResultDialog(self, query, results)
+        self.wait_window(dialog)
+        
+        # 使用者選擇了影片
+        if dialog.result:
+            self.entry_url.delete(0, "end")
+            self.entry_url.insert(0, dialog.result)
+            self.log(f"已選擇: {dialog.result}")
+            # 自動觸發分析
+            self.after(200, self.on_fetch_info)
+
 
     def _run_playlist_check(self, url, c_type, c_path, ua, proxy):
         # 快速分析清單 (不抓詳細字幕)

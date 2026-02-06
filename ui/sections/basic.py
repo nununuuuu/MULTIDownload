@@ -93,9 +93,16 @@ class BasicTabMixin:
         # 2. Paste Button (Left of Analyze)
         def paste_url():
             try:
+                content = self.clipboard_get()
                 self.entry_url.delete(0, 'end')
-                self.entry_url.insert(0, self.clipboard_get())
-                if hasattr(self, 'on_fetch_info'):
+                self.entry_url.insert(0, content)
+                
+                # 智慧判斷：僅在偵測到網址特徵時才自動執行分析
+                # 一般文字則保留在輸入框，讓使用者編輯或手動按 Enter
+                url_indicators = ["http://", "https://", "youtu.be", "bilibili", "b23.tv", ".com/", ".tv/", "watch?v="]
+                is_url = any(indicator in content.lower() for indicator in url_indicators)
+                
+                if is_url and hasattr(self, 'on_fetch_info'):
                     self.after(200, self.on_fetch_info) 
             except: pass
             
@@ -105,9 +112,16 @@ class BasicTabMixin:
         CTkToolTip(btn_paste, "貼上並自動分析網址")
 
         # 3. URL Entry (Fills remaining space)
-        self.entry_url = ctk.CTkEntry(input_bar, width=450, height=50, font=(self.font_family, 16), 
-                                      placeholder_text="貼上影片連結...", 
-                                      fg_color="transparent", border_width=0, text_color=("gray20", "white"))
+        self.entry_url = ctk.CTkEntry(
+            input_bar, 
+            width=450, 
+            height=50, 
+            font=(self.font_family, 16), 
+            placeholder_text="貼上連結或輸入關鍵字...", 
+            fg_color=("white", "#2b2b2b"), # 改為明確顏色，避免 IME 渲染白邊
+            border_width=0, 
+            text_color=("gray20", "white")
+        )
         self.entry_url.pack(side="left", padx=15, fill="x", expand=True)
         # Bind Enter key
         if hasattr(self, 'on_fetch_info'):

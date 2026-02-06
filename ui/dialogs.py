@@ -222,3 +222,340 @@ class CookiePasteDialog(ctk.CTkToplevel):
         
         self.result = content
         self.destroy()
+
+
+class SearchResultDialog(ctk.CTkToplevel):
+    """YouTube + Bilibili 搜尋結果選擇彈窗"""
+    def __init__(self, parent, query, results):
+        super().__init__(parent)
+        self.title(f"搜尋結果：{query}")
+        # self.geometry("620x650") # Removed to avoid conflict
+        self.result = None  # 選中的 URL
+        self.all_results = results  # 儲存完整結果
+        self.current_filter = "all"  # 當前篩選
+        
+        # Make modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # 置中視窗
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - 375
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - 360
+        self.geometry(f"+{x}+{y}")
+        self.geometry("750x680")
+        
+        # Header
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(15, 5))
+        
+        ctk.CTkLabel(
+            header, 
+            text=f"🔍 搜尋：{query}", 
+            font=("Microsoft JhengHei UI", 16, "bold")
+        ).pack(side="left")
+        
+        # 結果計數標籤 (會動態更新)
+        self.lbl_count = ctk.CTkLabel(
+            header, 
+            text=f"共 {len(results)} 筆結果", 
+            font=("Microsoft JhengHei UI", 12),
+            text_color="gray"
+        )
+        self.lbl_count.pack(side="right")
+        
+        # 篩選與排序區
+        control_frame = ctk.CTkFrame(self, fg_color="transparent")
+        control_frame.pack(fill="x", padx=20, pady=(5, 10))
+        
+        # 左側：平台篩選按鈕
+        filter_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
+        filter_frame.pack(side="left")
+        
+        # 計算各平台數量
+        yt_count = len([r for r in results if r.get('platform') == 'youtube'])
+        bili_count = len([r for r in results if r.get('platform') == 'bilibili'])
+        
+        self.filter_btns = {}
+        filter_options = [
+            ("all", f"全部 ({len(results)})"),
+            ("youtube", f"YouTube ({yt_count})"),
+            ("bilibili", f"Bilibili ({bili_count})")
+        ]
+        
+        for code, text in filter_options:
+            btn = ctk.CTkButton(
+                filter_frame,
+                text=text,
+                width=110,
+                height=30,
+                corner_radius=15,
+                font=("Microsoft JhengHei UI", 11),
+                fg_color=("#1F6AA5", "#1F6AA5") if code == "all" else "transparent",
+                text_color="white" if code == "all" else ("gray50", "gray70"),
+                hover_color=("#144870", "#144870"),
+                border_width=1 if code != "all" else 0,
+                border_color=("gray60", "gray50"),
+                command=lambda c=code: self._on_filter_change(c)
+            )
+            btn.pack(side="left", padx=2)
+            self.filter_btns[code] = btn
+        
+        # 右側：排序選項
+        sort_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
+        sort_frame.pack(side="right")
+        
+        ctk.CTkLabel(sort_frame, text="排序:", font=("Microsoft JhengHei UI", 11), text_color="gray").pack(side="left", padx=(0, 5))
+        
+        self.sort_var = ctk.StringVar(value="views_desc")
+        self.sort_menu = ctk.CTkOptionMenu(
+            sort_frame,
+            variable=self.sort_var,
+            values=["觀看次數↓", "觀看次數↑", "上傳時間↓", "上傳時間↑"],
+            width=150,
+            height=28,
+            font=("Microsoft JhengHei UI", 11),
+            dropdown_font=("Microsoft JhengHei UI", 11),
+            dynamic_resizing=False,
+            command=self._on_sort_change
+        )
+        self.sort_menu.pack(side="left")
+        self.sort_menu.set("觀看次數↓")
+        
+        # 結果列表容器
+        self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.scroll.pack(fill="both", expand=True, padx=15, pady=10)
+        
+        # 渲染結果 (預設按觀看數降序)
+        self._apply_sort_and_render()
+        
+        # 底部按鈕
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(5, 15))
+        
+        ctk.CTkButton(
+            btn_frame, 
+            text="取消", 
+            width=100, 
+            height=35,
+            fg_color="transparent",
+            border_width=1,
+            border_color=("gray60", "gray50"),
+            text_color=("gray30", "gray80"),
+            hover_color=("gray90", "#3A3A3A"),
+            command=self.destroy
+        ).pack(side="right")
+
+    def _on_filter_change(self, filter_code):
+        """切換平台篩選"""
+        self.current_filter = filter_code
+        
+        # 更新按鈕樣式
+        for code, btn in self.filter_btns.items():
+            if code == filter_code:
+                btn.configure(
+                    fg_color=("#1F6AA5", "#1F6AA5"),
+                    text_color="white",
+                    border_width=0
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    text_color=("gray50", "gray70"),
+                    border_width=1
+                )
+        
+        # 過濾結果
+        if filter_code == "all":
+            filtered = self.all_results
+        else:
+            filtered = [r for r in self.all_results if r.get('platform') == filter_code]
+        
+        # 更新計數
+        self.lbl_count.configure(text=f"共 {len(filtered)} 筆結果")
+        
+        # 重新排序並渲染
+        self._apply_sort_and_render()
+
+    def _on_sort_change(self, value):
+        """切換排序方式"""
+        self._apply_sort_and_render()
+
+    def _apply_sort_and_render(self):
+        """根據當前篩選和排序設定渲染結果"""
+        # 1. 先進行平台篩選
+        if self.current_filter == "all":
+            filtered = self.all_results.copy()
+        else:
+            filtered = [r for r in self.all_results if r.get('platform') == self.current_filter]
+        
+        # 2. 進行排序
+        sort_value = self.sort_menu.get()
+        reverse = "↓" in sort_value
+        
+        def get_view_count(item):
+            vc = item.get('view_count')
+            if vc is None:
+                return 0
+            if isinstance(vc, str):
+                vc = vc.replace(',', '').replace('萬', '0000').replace('億', '00000000')
+                try:
+                    return int(float(vc))
+                except:
+                    return 0
+            return int(vc)
+        
+        def get_upload_time(item):
+            # 優先使用 timestamp，否則嘗試解析日期字串
+            ts = item.get('timestamp') or item.get('upload_date') or item.get('pubdate') or 0
+            if isinstance(ts, str):
+                try:
+                    # YYYYMMDD 格式
+                    return int(ts.replace('-', '').replace('/', '')[:8])
+                except:
+                    return 0
+            return int(ts) if ts else 0
+        
+        if "觀看" in sort_value:
+            filtered.sort(key=get_view_count, reverse=reverse)
+        elif "日期" in sort_value:
+            filtered.sort(key=get_upload_time, reverse=reverse)
+        
+        # 3. 渲染
+        self._render_results(filtered)
+
+    def _render_results(self, results):
+        """渲染結果列表"""
+        # 清空現有內容
+        for widget in self.scroll.winfo_children():
+            widget.destroy()
+        
+        if not results:
+            ctk.CTkLabel(
+                self.scroll, 
+                text="找不到相關影片，請嘗試其他關鍵字。", 
+                text_color="gray",
+                font=("Microsoft JhengHei UI", 14)
+            ).pack(pady=50)
+        else:
+            for item in results:
+                self._create_result_row(item)
+
+
+    def _create_result_row(self, item):
+        """建立單筆搜尋結果的 UI 列"""
+        row = ctk.CTkFrame(
+            self.scroll, 
+            fg_color=("white", "#3A3A3A"), 
+            corner_radius=10,
+            cursor="hand2"
+        )
+        row.pack(fill="x", pady=5, padx=5)
+        row.grid_columnconfigure(1, weight=1)
+        
+        # 儲存 URL 到 row 物件
+        row.video_url = item.get('url')
+        
+        # 縮圖區域 (Placeholder)
+        thumb_frame = ctk.CTkFrame(row, width=160, height=90, fg_color=("gray85", "gray25"), corner_radius=6)
+        thumb_frame.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        thumb_frame.grid_propagate(False)
+        
+        # 縮圖載入 (異步)
+        thumb_url = item.get('thumbnail')
+        if thumb_url:
+            self._load_thumbnail_async(thumb_frame, thumb_url)
+        else:
+            ctk.CTkLabel(thumb_frame, text="🎬", font=("Segoe UI Emoji", 24), text_color="gray").place(relx=0.5, rely=0.5, anchor="center")
+        
+        # 標題
+        title = item.get('title', '未知標題')
+        if len(title) > 55:
+            title = title[:53] + "..."
+        
+        lbl_title = ctk.CTkLabel(
+            row, 
+            text=title, 
+            font=("Microsoft JhengHei UI", 13, "bold"),
+            anchor="w",
+            text_color=("gray10", "gray95")
+        )
+        lbl_title.grid(row=0, column=1, sticky="sw", padx=(0, 10), pady=(10, 0))
+        
+        # 頻道 + 時長 + 平台標籤
+        platform = item.get('platform', 'youtube')
+        platform_icon = "▶" if platform == 'youtube' else "📺"
+        platform_color = "#FF0000" if platform == 'youtube' else "#00A1D6"
+        
+        meta_frame = ctk.CTkFrame(row, fg_color="transparent")
+        meta_frame.grid(row=1, column=1, sticky="nw", padx=(0, 10), pady=(0, 10))
+        
+        # 平台標籤
+        lbl_platform = ctk.CTkLabel(
+            meta_frame, 
+            text=platform_icon,
+            font=("Segoe UI Emoji", 10),
+            text_color=platform_color,
+            width=16
+        )
+        lbl_platform.pack(side="left")
+        
+        meta = f"{item.get('uploader', '未知頻道')} • {item.get('duration', '--:--')}"
+        lbl_meta = ctk.CTkLabel(
+            meta_frame, 
+            text=meta, 
+            font=("Microsoft JhengHei UI", 11),
+            anchor="w",
+            text_color="gray"
+        )
+        lbl_meta.pack(side="left")
+        
+        # 綁定點擊事件
+        def on_click(event, url=item.get('url')):
+            self.result = url
+            self.destroy()
+        
+        # 綁定到所有子元件
+        for widget in [row, lbl_title, lbl_meta, thumb_frame, meta_frame, lbl_platform]:
+            widget.bind("<Button-1>", on_click)
+        
+        # Hover 效果
+        def on_enter(event):
+            row.configure(fg_color=("gray90", "#4A4A4A"))
+        def on_leave(event):
+            row.configure(fg_color=("white", "#3A3A3A"))
+        
+        row.bind("<Enter>", on_enter)
+        row.bind("<Leave>", on_leave)
+
+    def _load_thumbnail_async(self, frame, url):
+        """異步載入縮圖"""
+        import threading
+        
+        def _load():
+            try:
+                import requests
+                from PIL import Image
+                from io import BytesIO
+                
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200:
+                    img = Image.open(BytesIO(resp.content))
+                    img = img.resize((160, 90), Image.Resampling.LANCZOS)
+                    
+                    # 回到主線程更新 UI
+                    def _update():
+                        try:
+                            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(160, 90))
+                            lbl = ctk.CTkLabel(frame, image=ctk_img, text="")
+                            lbl.place(relx=0.5, rely=0.5, anchor="center")
+                            # 重新綁定點擊事件
+                            lbl.bind("<Button-1>", lambda e: None)  # 將在父層處理
+                        except:
+                            pass
+                    
+                    self.after(0, _update)
+            except:
+                pass
+        
+        threading.Thread(target=_load, daemon=True).start()

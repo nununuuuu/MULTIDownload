@@ -131,6 +131,183 @@ class YtDlpCore:
         except Exception as e:
             return {'error': str(e)}
 
+    def search_videos(self, query, max_results=10, cookie_type='none', cookie_path='', user_agent=None, proxy=None):
+        """同時搜尋 YouTube 和 Bilibili 影片"""
+        try:
+            import yt_dlp
+        except ImportError as e:
+            return {'error': f"核心載入失敗: {e}"}
+
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': 'in_playlist',
+            'skip_download': True,
+            'ignoreerrors': True,  # 忽略單一平台錯誤
+        }
+        
+        if user_agent: ydl_opts['user_agent'] = user_agent
+        if proxy: ydl_opts['proxy'] = proxy
+
+        if cookie_type in SUPPORTED_BROWSERS:
+            ydl_opts['cookiesfrombrowser'] = (cookie_type, )
+        elif cookie_type == 'file' and cookie_path:
+            if os.path.exists(cookie_path):
+                ydl_opts['cookiefile'] = cookie_path
+        elif cookie_type == 'paste' and cookie_path:
+            if os.path.exists(cookie_path):
+                ydl_opts['cookiefile'] = cookie_path
+
+        # 每個平台各抓 max_results 筆 (多抓幾筆以補足過濾)
+        per_platform = max_results + 5
+        
+        all_results = []
+        
+        # 搜尋 YouTube
+        yt_results = []
+        try:
+            yt_url = f"ytsearch{per_platform}:{query}"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(yt_url, download=False)
+                if info and 'entries' in info:
+                    for entry in info.get('entries', []):
+                        parsed = self._parse_search_entry(entry, 'youtube')
+                        if parsed:
+                            yt_results.append(parsed)
+        except Exception as e:
+            print(f"YouTube 搜尋錯誤: {e}")
+        
+        # 截取 YouTube 前 max_results 筆
+        all_results.extend(yt_results[:max_results])
+        
+        # 搜尋 Bilibili (使用官方 API)
+        bili_results = self._search_bilibili_api(query, max_results)
+        all_results.extend(bili_results)
+
+        # 排序由 UI 彈窗處理
+        return {'results': all_results}
+
+    def _search_bilibili_api(self, query, max_results=20):
+        """使用 Bilibili 官方 API 搜尋影片"""
+        import requests
+        import urllib.parse
+        
+        results = []
+        try:
+            session = requests.Session()
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            }
+            session.headers.update(headers)
+            
+            # 1. 先訪問首頁獲取必要的 Cookie (buvid3, b_nut 等)
+            session.get('https://www.bilibili.com/', timeout=5)
+            
+            # 2. 搜尋 API (使用舊版非 WBI API)
+            encoded_query = urllib.parse.quote(query)
+            api_url = f"https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword={encoded_query}&page=1&page_size={max_results}"
+            
+            search_headers = {
+                'Referer': f'https://search.bilibili.com/all?keyword={encoded_query}',
+                'Origin': 'https://search.bilibili.com',
+            }
+            
+            resp = session.get(api_url, headers=search_headers, timeout=10)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                
+                # 檢查回傳格式
+                result_list = None
+                if data.get('code') == 0:
+                    if data.get('data', {}).get('result'):
+                        result_list = data['data']['result']
+                
+                if result_list:
+                    for item in result_list[:max_results]:
+                        duration_str = item.get('duration', '--:--')
+                        
+                        # 清理標題中的 <em> 標籤
+                        title = item.get('title', '未知標題')
+                        title = title.replace('<em class="keyword">', '').replace('</em>', '')
+                        
+                        thumbnail = item.get('pic', '')
+                        if thumbnail and not thumbnail.startswith('http'):
+                            thumbnail = 'https:' + thumbnail
+                        
+                        results.append({
+                            'title': title,
+                            'url': f"https://www.bilibili.com/video/{item.get('bvid', '')}",
+                            'thumbnail': thumbnail,
+                            'duration': duration_str,
+                            'uploader': item.get('author', '未知頻道'),
+                            'view_count': item.get('play'),
+                            'timestamp': item.get('pubdate'),  # Bilibili 的上傳時間戳
+                            'platform': 'bilibili',
+                        })
+        except Exception as e:
+            print(f"Bilibili API 搜尋錯誤: {e}")
+        
+        return results
+
+    def _parse_search_entry(self, entry, platform):
+        """解析單筆搜尋結果"""
+        if not entry:
+            return None
+        
+        duration = entry.get('duration')
+        entry_url = entry.get('url') or ''
+        entry_id = entry.get('id') or ''
+        
+        # YouTube 過濾
+        if platform == 'youtube':
+            if not duration:
+                return None
+            if '/channel/' in entry_url or '/@' in entry_url or entry_url.startswith('https://www.youtube.com/c/'):
+                return None
+            if 'list=' in entry_url and 'watch?v=' not in entry_url:
+                return None
+        
+        # Bilibili 過濾 (放寬條件，Bilibili 有時不回傳 duration)
+        # if platform == 'bilibili':
+        #     if not duration:
+        #         return None
+        
+        # 組建 URL
+        video_url = entry_url
+        if not video_url and entry_id:
+            if platform == 'youtube':
+                video_url = f"https://www.youtube.com/watch?v={entry_id}"
+            elif platform == 'bilibili':
+                video_url = f"https://www.bilibili.com/video/{entry_id}"
+        
+        # 格式化時長
+        if duration:
+            mins, secs = divmod(int(duration), 60)
+            hours, mins = divmod(mins, 60)
+            if hours > 0:
+                duration_str = f"{hours}:{mins:02d}:{secs:02d}"
+            else:
+                duration_str = f"{mins}:{secs:02d}"
+        else:
+            duration_str = "--:--"
+        
+        return {
+            'title': entry.get('title', '未知標題'),
+            'url': video_url,
+            'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails', [{}])[-1].get('url') if entry.get('thumbnails') else None),
+            'duration': duration_str,
+            'uploader': entry.get('uploader') or entry.get('channel') or '未知頻道',
+            'view_count': entry.get('view_count'),
+            'timestamp': entry.get('timestamp'),  # Unix timestamp
+            'upload_date': entry.get('upload_date'),  # YYYYMMDD 格式
+            'platform': platform,
+        }
+
+
     def get_available_hw_accel(self):
         """偵測可用的硬體加速器 (NVIDIA, Intel, AMD)"""
         accel_types = []
