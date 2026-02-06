@@ -225,6 +225,9 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         # 啟動自動更新檢查 (延遲 2 秒，避免影響啟動速度)
         self.after(2000, lambda: self.check_app_update(silent=True))
         
+        # 啟動核心組件 (yt-dlp) 背景更新檢查
+        self.after(5000, self.check_core_update_silent)
+        
         # 啟動監聽迴圈 (剪貼簿)
         self.last_clipboard_content = ""
         self.after(1000, self._monitoring_loop)
@@ -1760,6 +1763,10 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
 
     def _handle_update_found(self, version, zip_url, exe_url):
         """處理更新UI邏輯 (Main Thread)"""
+        # 顯示紅點提示 (即使使用者關閉彈窗，側邊欄也會有提示)
+        if hasattr(self, 'show_nav_badge'): self.show_nav_badge("About")
+        if hasattr(self, 'btn_update_app'): self.show_widget_badge(self.btn_update_app, 'app_update')
+        
         if zip_url or exe_url:
             self.show_update_selection_dialog(version, zip_url, exe_url)
         else:

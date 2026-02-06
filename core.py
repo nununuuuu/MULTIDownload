@@ -358,18 +358,14 @@ class YtDlpCore:
                 'add_metadata': True,
             })
 
-            # [Fix] 使用 Raw String 確保正則表達式被正確解析
-            # 針對 upload_date (YYYYMMDD) 提取前四碼 (年份)
+            # [Fix] 將正則表達式提取改為直接對應內建欄位，更穩定且支援更多來源
             opts['parse_metadata'] = [
                 'uploader:artist',
                 'description:comment',
-                r'upload_date:(?P<date>^\d{4})',
-                r'upload_date:(?P<year>^\d{4})',
-                r'upload_date:(?P<meta_date>^\d{4})',
-                # 若有原始發行日期 (release_date)，優先使用
-                r'release_date:(?P<date>^\d{4})',
-                r'release_date:(?P<year>^\d{4})',
-                r'release_date:(?P<meta_date>^\d{4})',
+                '%(upload_year)s:%(date)s',
+                '%(upload_year)s:%(year)s',
+                '%(release_year)s:%(date)s',
+                '%(release_year)s:%(year)s',
             ]
 
         if config.get('sponsorblock'): 
