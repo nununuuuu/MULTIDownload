@@ -137,9 +137,19 @@ A: 程式會開啟一個進度視窗，自動連接 PyPI 下載最新版 yt-dlp�
 A: 這通常是因為影片使用了 Opus 音訊編碼。請在格式設定中勾選 **「H.264 (相容模式)」**，即可解決此問題。
 
 **Q: 如何下載會員/年齡限制影片？**
-A: 請在瀏覽器上登入 YouTube 帳號，然後在程式的 [進階選項] 中勾選對應的瀏覽器 (例如 Chrome)，或匯出 cookies.txt 檔案。
+A: 
+在[進階選項]中更改cookies設定
+- 請在瀏覽器上登入 YouTube 帳號，並勾選對應的瀏覽器 (例如 Chrome)。
+- 貼上 cookies。
+- 導入cookies.txt檔案。
 
-- **注意：OAuth 認證已失效，請勿選用。**
+**Q: 若出現unable to download video data: HTTP Error 403: Forbidden？**
+A: 此錯誤為 YouTube 阻擋伺服器連結，請先使用以下方法排除問題
+- 更換網路環境：嘗試切換 VPN 或手機熱點。
+- 更新yt-dlp：避免版本過舊導致的存取問題。
+- 使用**cookies登入**：YouTube可能阻擋疑似為機器人的請求，使用cookies登入能證明為真實使用者。
+
+
 
 ---
 
