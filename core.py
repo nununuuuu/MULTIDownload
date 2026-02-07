@@ -631,14 +631,41 @@ class YtDlpCore:
                 except: pass
 
             v_codecs = []
-            if config.get('use_h264_legacy', False):
+            
+            # 取得 UI 選項的編碼
+            # "Auto (預設)", "H.264 - 舊裝置/車機", "H.265 - 省空間/蘋果", "VP9 - Android/舊電腦4K", "AV1 - 極致畫質"
+            sel_codec = config.get('video_codec', 'Auto')
+            
+            is_h264_mode = "H.264" in sel_codec or config.get('use_h264_legacy', False)
+            is_h265_mode = "H.265" in sel_codec
+            is_vp9_mode = "VP9" in sel_codec
+            is_av1_mode = "AV1" in sel_codec
+
+            if is_h264_mode:
                 v_codecs.append(f"bestvideo{res_constraint}[vcodec^=avc1]")
+            elif is_vp9_mode:
+                v_codecs.append(f"bestvideo{res_constraint}[vcodec^=vp9]")
+            elif is_av1_mode:
+                v_codecs.append(f"bestvideo{res_constraint}[vcodec^=av01]")
+            
+            # 若為 Auto 或 H.265(需事後轉檔)，則先下載畫質最好的 (通常是 av1/vp9)
             v_codecs.append(f"bestvideo{res_constraint}")
             
             a_codecs = []
-            wanted_audio = config.get('audio_codec', 'Auto').split(' ')[0]
-            if wanted_audio == 'AAC' or config.get('use_h264_legacy', False):
+            # 解析音訊編碼選擇
+            # "Auto (預設)", "Opus - 音質優先", "AAC - 車機/蘋果", "MP3 - 萬用格式", "FLAC - 無損", "WAV - 無損原始"
+            audio_codec_sel = config.get('audio_codec', 'Auto')
+            is_aac_mode = "AAC" in audio_codec_sel
+            is_mp3_mode = "MP3" in audio_codec_sel
+            is_opus_mode = "Opus" in audio_codec_sel
+            is_flac_mode = "FLAC" in audio_codec_sel
+            is_wav_mode = "WAV" in audio_codec_sel
+            
+            # H.264 模式強制 AAC (for compatibility)
+            if is_aac_mode or is_mp3_mode or is_h264_mode:
                 a_codecs.append("bestaudio[ext=m4a]")
+            elif is_opus_mode:
+                a_codecs.append("bestaudio[ext=webm]")
             a_codecs.append("bestaudio")
 
             fmt_options = []
@@ -651,33 +678,75 @@ class YtDlpCore:
             opts['format'] = "/".join(fmt_options)
             opts['merge_output_format'] = config['ext']
 
-
-            # 只有在非裁剪模式下才強制串流複製 (裁剪時為了精確度應允許 re-encode)
-            if not config['use_time_range']:
-                merger_args = []
-                if "AAC" in config.get('audio_codec', ''):
-                    merger_args = ['-c:v', 'copy', '-c:a', 'aac']
-                    if target_bitrate and target_bitrate.isdigit():
-                         merger_args.extend(['-b:a', f'{target_bitrate}k'])
-                elif target_bitrate:
-                    merger_args = ['-c:v', 'copy', '-c:a', 'libopus', '-b:a', f'{target_bitrate}k']
-                
-                if merger_args:
-                    if 'postprocessor_args' not in opts: opts['postprocessor_args'] = {}
-                    if 'Merger' not in opts['postprocessor_args']: opts['postprocessor_args']['Merger'] = []
-                    opts['postprocessor_args']['Merger'].extend(merger_args)
-            else:
-                # 裁剪模式：強制全部重新編碼 (Video+Audio) 以修復嚴重的时间軸問题
-                # 下載部分片段時，Steam Copy 容易導致影音不同步或後段無聲
-                # 重編碼雖然較慢，但能確保檔案完整性
+            # Post-Processing Args for Merger/Converter
+            merger_args = []
+            
+            # 1. 裁剪模式：強制重編碼 (最高優先級)
+            if config['use_time_range']:
                 if 'postprocessor_args' not in opts: opts['postprocessor_args'] = {}
                 if 'Merger' not in opts['postprocessor_args']: opts['postprocessor_args']['Merger'] = []
                 
-                # 使用 libx264 (通用) + aac，並加上 -preset ultrafast 加速處理
+                # 使用 libx264 快速裁剪 (兼顧速度與相容性)
                 opts['postprocessor_args']['Merger'].extend([
                     '-c:v', 'libx264', '-preset', 'ultrafast', 
                     '-c:a', 'aac', '-b:a', '192k'
                 ])
+                
+            # 2. H.265 轉檔模式 (若未啟用裁剪)
+            elif is_h265_mode:
+                # 偵測硬體加速
+                enc_cmd = ['-c:v', 'libx265', '-crf', '28', '-preset', 'medium', '-tag:v', 'hvc1']
+                hw_type = config.get('hardware_accel', '')
+                
+                if "NVIDIA" in hw_type:
+                    enc_cmd = ['-c:v', 'hevc_nvenc', '-preset', 'p4', '-tag:v', 'hvc1']
+                elif "Intel" in hw_type:
+                     enc_cmd = ['-c:v', 'hevc_qsv', '-load_plugin', 'hevc_hw', '-tag:v', 'hvc1']
+                elif "AMD" in hw_type:
+                     enc_cmd = ['-c:v', 'hevc_amf', '-tag:v', 'hvc1']
+                elif "Apple" in hw_type:
+                     enc_cmd = ['-c:v', 'hevc_videotoolbox', '-tag:v', 'hvc1']
+
+                merger_args = enc_cmd + ['-c:a', 'copy']
+                
+                if 'postprocessor_args' not in opts: opts['postprocessor_args'] = {}
+                if 'Merger' not in opts['postprocessor_args']: opts['postprocessor_args']['Merger'] = []
+                opts['postprocessor_args']['Merger'].extend(merger_args)
+
+            # 3. 一般模式 (Stream Copy or Audio Re-encode)
+            else:
+                if is_aac_mode or is_h264_mode:
+                    merger_args = ['-c:v', 'copy', '-c:a', 'aac']
+                    if target_bitrate and target_bitrate.isdigit():
+                         merger_args.extend(['-b:a', f'{target_bitrate}k'])
+                elif is_mp3_mode:
+                    # MP3 需要重新編碼
+                    merger_args = ['-c:v', 'copy', '-c:a', 'libmp3lame']
+                    if target_bitrate and target_bitrate.isdigit():
+                         merger_args.extend(['-b:a', f'{target_bitrate}k'])
+                    else:
+                         merger_args.extend(['-b:a', '192k'])  # MP3 預設 192kbps
+                elif is_opus_mode:
+                    merger_args = ['-c:v', 'copy', '-c:a', 'libopus']
+                    if target_bitrate and target_bitrate.isdigit():
+                         merger_args.extend(['-b:a', f'{target_bitrate}k'])
+                elif is_flac_mode:
+                    # FLAC 無損編碼
+                    merger_args = ['-c:v', 'copy', '-c:a', 'flac']
+                elif is_wav_mode:
+                    # WAV 無損編碼 (PCM)
+                    merger_args = ['-c:v', 'copy', '-c:a', 'pcm_s16le']
+                elif target_bitrate:
+                    # Auto mode with custom bitrate
+                    merger_args = ['-c:v', 'copy', '-c:a', 'libopus', '-b:a', f'{target_bitrate}k']
+                else:
+                    # 完全不轉碼 (Video Copy / Audio Copy)
+                    pass
+
+                if merger_args:
+                    if 'postprocessor_args' not in opts: opts['postprocessor_args'] = {}
+                    if 'Merger' not in opts['postprocessor_args']: opts['postprocessor_args']['Merger'] = []
+                    opts['postprocessor_args']['Merger'].extend(merger_args)
 
         # 3. 其他功能 (裁剪/字幕/直播)
         if config['use_time_range']:

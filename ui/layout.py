@@ -757,261 +757,6 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
              self.var_after_completion.set("none")
              
         on_after_click(self.var_after_completion.get())
-
-    def setup_advanced_ui(self):
-        # 建立捲動區域以容納更多設定
-        scroll_container = ctk.CTkScrollableFrame(self.tab_adv, fg_color="transparent")
-        scroll_container.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # --- Helper: Section Card ---
-        def create_section_card(parent, title, icon="⚙️"):
-            frame = ctk.CTkFrame(parent, fg_color=("gray95", "#454545"), corner_radius=15)
-            frame.pack(fill="x", pady=10, padx=10)
-            
-            # Header
-            header = ctk.CTkFrame(frame, fg_color="transparent")
-            header.pack(fill="x", padx=20, pady=(15, 10))
-            
-            ctk.CTkLabel(header, text=icon, font=("Segoe UI Emoji", 18)).pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header, text=title, font=("Microsoft JhengHei UI", 16, "bold"), text_color=("gray10", "gray90")).pack(side="left") # Standard Text
-            
-            # Content Container
-            content = ctk.CTkFrame(frame, fg_color="transparent")
-            content.pack(fill="x", padx=20, pady=(0, 20))
-            return content
-
-        # --- 1. Cookie 來源 (Cookies) ---
-        cookie_card = create_section_card(scroll_container, "帳號授權與 Cookie (Account)", icon="🍪")
-        
-        self.var_cookie_mode = ctk.StringVar(value="none")
-        
-        # Sub-section: Browser
-        b_header = ctk.CTkFrame(cookie_card, fg_color="transparent")
-        b_header.pack(fill="x", pady=(5, 10))
-        ctk.CTkLabel(b_header, text="從瀏覽器讀取 (推薦)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="gray").pack(side="left")
-        
-        lbl_b_help = ctk.CTkLabel(b_header, text="❓", cursor="hand2", font=self.font_small)
-        lbl_b_help.pack(side="left", padx=5)
-        CTkToolTip(lbl_b_help, "【說明】\n程式會自動讀取您選擇的瀏覽器中 YouTube 的登入狀態。\n無需手動匯出檔案，設定與更新最方便，但穩定度低。\n若無法使用，建議使用下方cookies.txt方式。\n注意：執行下載時建議先將該瀏覽器「完全關閉」，以免讀取失敗。")
-        
-        # Browser Grid (Chips/Pills Style)
-        browser_grid = ctk.CTkFrame(cookie_card, fg_color="transparent")
-        browser_grid.pack(fill="x", pady=5)
-        
-        browsers = [
-            ("不使用", "none"), ("Chrome", "chrome"), ("Edge", "edge"), ("Firefox", "firefox"),
-            ("Opera", "opera"), ("Brave", "brave"), ("Vivaldi", "vivaldi"), ("Chromium", "chromium")
-        ]
-        
-        self.browser_btns = {}
-
-        def on_browser_click(val):
-            self.var_cookie_mode.set(val)
-            self.on_cookie_mode_change()
-            update_browser_visuals()
-            if hasattr(self, 'save_config'): self.save_config()
-
-        def update_browser_visuals():
-            current = self.var_cookie_mode.get()
-            for val, btn in self.browser_btns.items():
-                if val == current:
-                    btn.configure(
-                        fg_color="#1F6AA5", 
-                        text_color="white", 
-                        border_width=0,
-                        hover_color="#144870" 
-                    )
-                else:
-                    btn.configure(
-                        fg_color=("white", "#333333"), 
-                        text_color=("gray20", "gray80"), 
-                        border_width=2, 
-                        border_color=("gray70", "gray50"),
-                        hover_color=("gray90", "#404040") 
-                    )
-
-        for i, (text, val) in enumerate(browsers):
-            btn = ctk.CTkButton(
-                browser_grid, 
-                text=text, 
-                height=32,
-                font=self.font_text,
-                corner_radius=16,
-                fg_color=("white", "#333333"), 
-                border_width=2,
-                border_color=("gray70", "gray50"),
-                text_color=("gray20", "gray80"),
-                hover_color=("gray90", "#404040"), 
-                command=lambda v=val: on_browser_click(v)
-            )
-            btn.grid(row=i//4, column=i%4, padx=6, pady=6, sticky="ew")
-            self.browser_btns[val] = btn
-            browser_grid.grid_columnconfigure(i%4, weight=1)
-
-        update_browser_visuals()
-
-        CTkToolTip(browser_grid, "自動讀取瀏覽器登入狀態 (例如 YouTube Premium 會員)。\n執行前建議完全關閉瀏覽器以避免讀取鎖定。")
-
-        # Sub-section: File
-        ctk.CTkFrame(cookie_card, height=2, fg_color=("gray85", "gray30")).pack(fill="x", pady=20) # Divider
-        
-        f_header = ctk.CTkFrame(cookie_card, fg_color="transparent")
-        f_header.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_header, text="使用 cookies.txt (穩定)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="gray").pack(side="left")
-        
-        lbl_f_help = ctk.CTkLabel(f_header, text="❓", cursor="hand2", font=self.font_small)
-        lbl_f_help.pack(side="left", padx=5)
-        CTkToolTip(lbl_f_help, "【如何取得 cookies.txt ?】\n建議點擊右側連結安裝「Get cookies.txt LOCALLY」擴充功能。\n安裝後：到 YouTube 首頁登入 -> 點擊擴充功能圖示 -> \"Export\" -> 下載")
-        
-        # Links
-        link_box = ctk.CTkFrame(f_header, fg_color="transparent")
-        link_box.pack(side="right")
-        
-        def make_link(parent, text, url):
-            lbl = ctk.CTkLabel(parent, text=text, text_color="#3B8ED0", cursor="hand2", font=self.font_small)
-            lbl.pack(side="left", padx=5)
-            lbl.bind("<Button-1>", lambda e: webbrowser.open(url))
-            lbl.bind("<Enter>", lambda e: lbl.configure(text_color="#1F6AA5"))
-            lbl.bind("<Leave>", lambda e: lbl.configure(text_color="#3B8ED0"))
-            
-        make_link(link_box, "[Chrome/Edge 擴充]", "https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc")
-        make_link(link_box, "[Firefox 擴充]", "https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/")
-        
-
-        
-        f_input_box = ctk.CTkFrame(cookie_card, fg_color="transparent")
-        f_input_box.pack(fill="x", padx=10)
-        
-        def on_file_mode_click():
-            self.var_cookie_mode.set("file")
-            self.on_cookie_mode_change()
-            update_browser_visuals()
-            if hasattr(self, 'save_config'): self.save_config()
-            
-        btn_file_mode = ctk.CTkButton(
-            f_input_box, text="檔案模式", width=100, height=32, corner_radius=16,
-            fg_color="transparent", border_width=1, border_color=("gray70", "gray50"), text_color=("gray20", "gray80"),
-            hover_color=("#D0E0F0", "#3A3A3A"),
-            command=on_file_mode_click
-        )
-        btn_file_mode.pack(side="left", padx=(0, 10))
-        self.browser_btns['file'] = btn_file_mode 
-
-        self.entry_cookie_path = ctk.CTkEntry(f_input_box, placeholder_text="請選擇 cookies.txt...", state="disabled", height=35)
-        self.entry_cookie_path.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        self.btn_cookie_browse = ctk.CTkButton(f_input_box, text="瀏覽", width=80, height=35, state="disabled", fg_color="#555555", command=self.browse_cookie_file)
-        self.btn_cookie_browse.pack(side="left")
-
-        # --- 貼上模式區塊 ---
-        paste_input_box = ctk.CTkFrame(cookie_card, fg_color="transparent")
-        paste_input_box.pack(fill="x", padx=10, pady=(10, 0))
-        
-        def on_paste_mode_click():
-            self.var_cookie_mode.set("paste")
-            self.on_cookie_mode_change()
-            update_browser_visuals()
-            if hasattr(self, 'save_config'): self.save_config()
-            
-        btn_paste_mode = ctk.CTkButton(
-            paste_input_box, text="貼上模式", width=100, height=32, corner_radius=16,
-            fg_color="transparent", border_width=1, border_color=("gray70", "gray50"), text_color=("gray20", "gray80"),
-            hover_color=("#D0E0F0", "#3A3A3A"),
-            command=on_paste_mode_click
-        )
-        btn_paste_mode.pack(side="left", padx=(0, 10))
-        self.browser_btns['paste'] = btn_paste_mode
-        
-        # 貼上狀態指示
-        self.lbl_paste_status = ctk.CTkLabel(
-            paste_input_box, 
-            text="尚未貼上 Cookie", 
-            font=self.font_small,
-            text_color=("gray50", "gray60")
-        )
-        self.lbl_paste_status.pack(side="left", padx=(0, 10))
-        
-        # 編輯/貼上按鈕
-        self.btn_cookie_paste = ctk.CTkButton(
-            paste_input_box, text="📋 貼上 Cookie", width=120, height=35, 
-            state="disabled", fg_color="#555555", 
-            command=self.open_cookie_paste_dialog
-        )
-        self.btn_cookie_paste.pack(side="right")
-
-        # --- 2. 效能設定 (Performance) ---
-        perf_card = create_section_card(scroll_container, "效能設定 (Performance)", icon="🚀")
-        
-        ctk.CTkLabel(perf_card, text="最大同時下載數", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
-        
-        perf_box = ctk.CTkFrame(perf_card, fg_color="transparent")
-        perf_box.pack(fill="x", pady=5)
-        
-        concurrent_values = [str(i) for i in range(1, 11)]
-        self.combo_concurrent = ctk.CTkOptionMenu(perf_box, values=concurrent_values, width=120, height=35, command=self.update_concurrent_label, 
-                                                  fg_color=("gray90", "gray30"), text_color=("black", "white"),
-                                                  button_color=("gray80", "gray40"), button_hover_color=("gray75", "gray35"))
-        self.combo_concurrent.pack(side="left")
-        self.combo_concurrent.set("1")
-        
-        ctk.CTkLabel(perf_box, text="(建議值: 1~3)", text_color="gray", font=self.font_small).pack(side="left", padx=15)
-
-        # --- 3. 網路設定 (Network) ---
-        net_card = create_section_card(scroll_container, "網路連接設定 (Network)", icon="🌐")
-        
-        # UA
-        ctk.CTkLabel(net_card, text="User Agent (偽裝瀏覽器)", font=self.font_title, text_color="gray").pack(anchor="w", pady=(5, 5))
-        self.entry_ua = ctk.CTkEntry(net_card, height=35, placeholder_text="預設 (自動隨機)", border_color=("gray70", "gray40"))
-        self.entry_ua.pack(fill="x", pady=5)
-        CTkToolTip(self.entry_ua, "若遇網站阻擋，可填入特定瀏覽器的 UA 字串。")
-        
-        # Proxy
-        proxy_header = ctk.CTkFrame(net_card, fg_color="transparent")
-        proxy_header.pack(fill="x", pady=(15, 5))
-        
-        ctk.CTkLabel(proxy_header, text="Proxy 代理伺服器", font=self.font_title, text_color="gray").pack(side="left")
-        
-        self.var_remember_proxy = ctk.BooleanVar(value=False)
-        def on_proxy_toggle():
-             if hasattr(self, 'save_config'): self.save_config()
-             
-        self.chk_remember_proxy = ctk.CTkSwitch(
-            proxy_header, text="記住設定", variable=self.var_remember_proxy, 
-            font=self.font_small, width=80, height=20,
-            command=on_proxy_toggle, progress_color="#2CC985", button_hover_color="#20A068"
-        )
-        self.chk_remember_proxy.pack(side="right")
-
-        self.entry_proxy = ctk.CTkEntry(net_card, height=35, placeholder_text="http://user:pass@host:port", border_color=("gray70", "gray40"))
-        self.entry_proxy.pack(fill="x", pady=5)
-        CTkToolTip(self.entry_proxy, "若需翻牆或隱藏 IP，請輸入 Proxy (支援 http/https/socks5)。")
-
-        # --- Event Bindings for Immediate Feedback ---
-        self.last_ua = ""
-        self.last_proxy = ""
-
-        def on_net_change(event=None):
-            # Check UA
-            curr_ua = self.entry_ua.get().strip()
-            if curr_ua != self.last_ua:
-                self.last_ua = curr_ua
-                if curr_ua:
-                    self.log(f"[設定變更] User Agent 已更新")
-                    self.show_toast("User Agent 已更新")
-                if hasattr(self, 'save_config'): self.save_config()
-            
-            # Check Proxy
-            curr_proxy = self.entry_proxy.get().strip()
-            if curr_proxy != self.last_proxy:
-                self.last_proxy = curr_proxy
-                if curr_proxy:
-                    self.log(f"[設定變更] Proxy 已更新")
-                    self.show_toast("Proxy 已更新")
-
-        self.entry_ua.bind("<FocusOut>", on_net_change)
-        self.entry_ua.bind("<Return>", on_net_change)
-        self.entry_proxy.bind("<FocusOut>", on_net_change)
-        self.entry_proxy.bind("<Return>", on_net_change)
         
 
     # --- Changelog Viewer ---
@@ -1229,21 +974,21 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
         version_label.pack(pady=(0, 20))
         
         quotes = [
-            "這裡沒有 Bug，只有還沒被發現的 Feature 🐛",
+            "這裡沒有 Bug，只有還沒被發現的 Feature",
             "程式碼寫得爛，但至少能動 ",
             "如果不 work，請嘗試重新開機 ",
-            "由 10% 的技術和 90% 的咖啡驅動 ☕",
+            "由 10% 的技術和 90% 的咖啡驅動",
             "這不是卡住，是在思考人生 ",
-            "不要問我為什麼，它就是能跑 🏃",
+            "不要問我為什麼，它就是能跑",
             "警告：可能包含少量人工智慧 (和大量人工智障) ",
             "如果 run不了，至少還能 walk",
             "只要 Code 能跑，Bug 就是種裝飾",
-            "程式碼與我，只有一個能動",
+            "程式碼跟我，只有一個能動",
             "只要心態不崩，程式就不算崩",
             "明明不是猴子卻一直在抓 Bug",
             "昨天解決一個 Bug，現在我有八個 Bug",
             "過程全是 Bug，至少還能 Run",
-            "點擊這裡並沒有彩蛋 (真的沒有) 🥚",
+            "點擊這裡並沒有彩蛋 (真的沒有)",
             "5 mins Coding + 8 hours Debugging = still not moving",
             "99% 人工智障 + 1% 新鮮的肝 = 動不了的垃圾",
             "程式碼不動，是因為它在沉思人生",
@@ -1397,14 +1142,25 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
                 if not download_url:
                     raise Exception("找不到可用的更新檔案 (.whl)")
 
+                # 確保 lib_dir 與 main.py 的載入路徑一致
                 if getattr(sys, 'frozen', False):
+                    # 打包環境: exe 所在目錄
                     base_path = os.path.dirname(sys.executable)
                 else:
-                    base_path = os.path.dirname(os.path.abspath(__file__))
+                    # 開發環境: 專案根目錄 (main.py 所在位置)
+                    # __file__ 是 ui/layout.py, 需要回到上一層
+                    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                     
                 lib_dir = os.path.join(base_path, 'lib')
-                if not os.path.exists(lib_dir):
-                    os.makedirs(lib_dir)
+                
+                # 直接刪除整個 lib 資料夾再重建
+                import shutil
+                if os.path.exists(lib_dir):
+                    try:
+                        shutil.rmtree(lib_dir)
+                    except:
+                        pass
+                os.makedirs(lib_dir, exist_ok=True)
 
                 with urllib.request.urlopen(download_url, timeout=60) as response:
                     whl_data = response.read()
@@ -1417,11 +1173,13 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
                 def on_success():
                     messagebox.showinfo("更新成功", f"yt-dlp 已更新，點擊確定將重啟程式。")
                     import subprocess
-                    current_file = sys.executable if getattr(sys, 'frozen', False) else __file__
                     if getattr(sys, 'frozen', False):
+                        # 打包環境: 直接重啟 exe
                         subprocess.Popen([sys.executable])
                     else:
-                        subprocess.Popen([sys.executable, current_file])
+                        # 開發環境: 找到 main.py 並執行
+                        main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'main.py')
+                        subprocess.Popen([sys.executable, main_py])
                     os._exit(0)
 
                 self.after(0, on_success)

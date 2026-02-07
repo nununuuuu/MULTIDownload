@@ -39,6 +39,7 @@ lib_path = os.path.join(app_path, "lib")
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
+# 嘗試載入 yt_dlp
 try:
     import yt_dlp
 except ImportError:
@@ -240,15 +241,21 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
 
     def check_hardware_acceleration(self):
         def _task():
-             # 使用 core 的靜態能力偵測
-             accels = self.core.get_available_hw_accel()
-             self.after(0, lambda: self._update_hw_ui(accels))
+            # 使用 core 的靜態能力偵測
+            accels = self.core.get_available_hw_accel()
+            try:
+                self.after(0, lambda: self._update_hw_ui(accels))
+            except RuntimeError:
+                # 視窗已關閉，忽略
+                pass
         threading.Thread(target=_task, daemon=True).start()
 
 
 
     def load_config(self):
         """讀取設定檔並應用到 UI"""
+        self.is_loading_config = True  # 暫時禁止 Toast
+        
         default_config = {
             "save_path": "",
             "cookie_mode": "none",
@@ -276,7 +283,9 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             self.var_cookie_mode.set(mode)
             if hasattr(self, 'on_cookie_mode_change'): 
                 self.on_cookie_mode_change()
-                self.after(100, lambda: self._update_browser_btn_visuals(mode))
+                # 更新按鈕視覺狀態
+                if hasattr(self, '_update_browser_visuals'):
+                    self.after(100, self._update_browser_visuals)
                 # 更新貼上模式狀態
                 if mode == 'paste' and hasattr(self, '_update_paste_status'):
                     self.after(150, self._update_paste_status)
@@ -333,6 +342,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         theme = default_config.get("theme", "System")
         self.user_selected_theme = theme
         ctk.set_appearance_mode(theme)
+        
+        self.after(500, lambda: setattr(self, 'is_loading_config', False))  # 延遲恢復 Toast 以確保 UI 穩定
 
     def save_config(self):
         """儲存當前設定到檔案"""
@@ -376,17 +387,6 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"Save Config Error: {e}")
-
-    def _update_browser_btn_visuals(self, current_mode):
-        """Helper to update browser buttons (copied logic from layout)"""
-        if not hasattr(self, 'browser_btns'): return
-        try:
-            for val, btn in self.browser_btns.items():
-                if val == current_mode:
-                    btn.configure(fg_color="#1F6AA5", text_color="white", border_width=0)
-                else:
-                    btn.configure(fg_color=("white", "#333333"), text_color=("gray20", "gray80"), border_width=1)
-        except: pass
 
     # Hook into update events to auto-save
     def on_path_change(self, event=None):
@@ -656,10 +656,28 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         raw_path = self.entry_path.get().strip()
         final_save_path = raw_path if raw_path else app_path
 
-        # Handle Format
-        raw_format = self.combo_format.get() 
-        selected_ext = raw_format.split(' ')[0]
-        is_audio_only = selected_ext in ['mp3', 'm4a', 'wav', 'flac']
+        # Handle Format (Mode-based)
+        download_mode = self.var_download_mode.get() if hasattr(self, 'var_download_mode') else "video"
+        
+        if download_mode == "audio":
+            # 純音訊模式
+            raw_format = self.var_audio_format.get() if hasattr(self, 'var_audio_format') else "MP3"
+            # 解析新格式名稱到副檔名
+            if "AAC" in raw_format or "m4a" in raw_format:
+                selected_ext = "m4a"
+            elif "Opus" in raw_format:
+                selected_ext = "opus"
+            elif "FLAC" in raw_format:
+                selected_ext = "flac"
+            elif "WAV" in raw_format:
+                selected_ext = "wav"
+            else:  # MP3 or default
+                selected_ext = "mp3"
+            is_audio_only = True
+        else:
+            # 影片模式
+            selected_ext = self.var_video_format.get() if hasattr(self, 'var_video_format') else "mp4"
+            is_audio_only = False
 
 
         config = {
@@ -674,7 +692,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             'use_time_range': self.var_cut.get(),
             'start_time': self.entry_start.get().strip(),
             'end_time': self.entry_end.get().strip(),
-            'use_h264_legacy': self.var_video_legacy.get(), 
+            'video_codec': self.var_video_codec_select.get() if hasattr(self, 'var_video_codec_select') else "Auto", 
             'playlist_mode': self.var_playlist.get(),       
             'sub_langs': self.get_selected_subs(), 
             'cookie_type': self.var_cookie_mode.get() if hasattr(self, 'var_cookie_mode') else 'none',
@@ -866,6 +884,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
 
     def show_toast(self, message, duration=2000, color="#01814A"):
         """顯示頂層懸浮通知 (使用 Toplevel + Transparent Color 實現真去背圓角)"""
+        if getattr(self, 'is_loading_config', False): return  # 設定載入中不顯示通知
         # 銷毀舊的 toast
         if hasattr(self, 'current_toast') and self.current_toast:
             try: self.current_toast.destroy()
@@ -1686,7 +1705,13 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                         update_status("下載 PyPI 核心中...")
                         whl_resp = requests.get(download_url, timeout=30)
                         
-                        if not os.path.exists(target_dir): os.makedirs(target_dir)
+                        # 直接刪除整個 lib 資料夾再重建
+                        if os.path.exists(target_dir):
+                            try:
+                                shutil.rmtree(target_dir)
+                            except:
+                                pass
+                        os.makedirs(target_dir, exist_ok=True)
                         
                         update_status("解壓縮中...")
                         with zipfile.ZipFile(io.BytesIO(whl_resp.content)) as z:
