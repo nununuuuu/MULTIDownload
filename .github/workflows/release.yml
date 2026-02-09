@@ -1,0 +1,159 @@
+name: 🚀 Release + Discord 通知
+
+# 手動觸發發布 (會自動讀取 APP_VERSION 作為 Tag)
+on:
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get APP_VERSION from constants.py
+        id: version
+        run: |
+          $content = Get-Content "constants.py" -Raw
+          if ($content -match 'APP_VERSION\s*=\s*"([^"]+)"') {
+            $version = $matches[1]
+            echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+            Write-Host "📌 APP_VERSION: $version"
+          } else {
+            Write-Error "❌ 無法讀取 APP_VERSION"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Create and Push Tag
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 檢查 tag 是否已存在
+          $tagExists = git tag -l $version
+          if ($tagExists) {
+            Write-Host "⚠️ Tag $version 已存在，將刪除並重建"
+            git tag -d $version
+            git push origin --delete $version 2>$null
+          }
+
+          git tag $version
+          git push origin $version
+          Write-Host "✅ 已建立並推送 Tag: $version"
+        shell: pwsh
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Setup FFmpeg
+        run: |
+          New-Item -ItemType Directory -Force -Path bin
+
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_temp -Force
+
+          $extractedDir = Get-ChildItem -Path ffmpeg_temp -Directory | Select-Object -First 1
+          $binSource = "$($extractedDir.FullName)\bin"
+
+          Move-Item -Path "$binSource\ffmpeg.exe" -Destination bin\
+          Move-Item -Path "$binSource\ffprobe.exe" -Destination bin\
+
+      - name: Build Application
+        run: python build_onedir.py
+
+      - name: Compress Release ZIP
+        run: |
+          Compress-Archive -Path dist/MULTIDownload -DestinationPath dist/MULTIDownload.zip -Force
+          Write-Host "✅ Created: dist/MULTIDownload.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: ${{ steps.version.outputs.VERSION }}
+          files: dist/MULTIDownload.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discord Notification
+        if: success()
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $releaseUrl = "https://github.com/nununuuuu/MULTIDownload/releases/tag/$version"
+
+          # 讀取 CHANGELOG.md 並解析當前版本的更新內容
+          $changelog = Get-Content "CHANGELOG.md" -Raw -Encoding UTF8
+
+          # 找到當前版本的區塊 (從 ## [版本號] 到下一個 ## [ 或檔案結尾)
+          $pattern = "(?s)## \[$version\](.*?)(?=\r?\n## \[|$)"
+          $match = [regex]::Match($changelog, $pattern)
+
+          if ($match.Success) {
+            $content = $match.Groups[1].Value.Trim()
+            # 只提取清單項目 (以 - 開頭的行)，移除 ### 標題
+            $lines = $content -split "`r?`n" | Where-Object { $_ -match "^\s*-\s+" }
+            # 清理每行：移除前導空白和粗體標記，只保留純文字
+            $changes = ($lines | ForEach-Object { 
+              $_ -replace "^\s*-\s*", "• " -replace "\*\*\[([^\]]+)\]\*\*", "[$1]" -replace "\*\*([^*]+)\*\*", "$1"
+            }) -join "`n"
+            
+            # 限制長度 (Discord embed 限制)
+            if ($changes.Length -gt 900) {
+              $changes = $changes.Substring(0, 900) + "..."
+            }
+          } else {
+            $changes = "請查看 Release 頁面了解更多。"
+          }
+
+          $embed = @{
+            title = "MULTIDownload v$version Released!"
+            description = "New version is now available for download."
+            color = 5814783
+            fields = @(
+              @{
+                name = "Version"
+                value = "v$version"
+                inline = $true
+              }
+              @{
+                name = "Download"
+                value = "[GitHub Releases]($releaseUrl)"
+                inline = $true
+              }
+              @{
+                name = "Changes"
+                value = $changes
+                inline = $false
+              }
+            )
+            footer = @{
+              text = "MULTIDownload - Auto Release"
+            }
+            timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          }
+
+          $body = @{
+            embeds = @($embed)
+          } | ConvertTo-Json -Depth 10
+
+          try {
+            Invoke-RestMethod -Uri "${{ secrets.DISCORD_WEBHOOK_URL }}" -Method Post -ContentType "application/json; charset=utf-8" -Body $body
+            Write-Host "✅ Discord 通知已發送！"
+          } catch {
+            Write-Host "⚠️ Discord 通知失敗: $_"
+          }
+        shell: pwsh

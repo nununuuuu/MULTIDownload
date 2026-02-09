@@ -65,7 +65,7 @@ class VideoFormatMixin:
                 if m == mode:
                     btn.configure(fg_color=("white", "#5A5A5A"), text_color=("#1F6AA5", "#88C0D0"), border_color=("#1F6AA5", "#88C0D0"), border_width=1)
                 else:
-                    btn.configure(fg_color="transparent", text_color=("gray30", "gray70"), border_width=0)
+                    btn.configure(fg_color="transparent", text_color=("gray10", "gray70"), border_width=0)
             # 切換顯示的設定區塊 (only if frames exist)
             if hasattr(self, 'post_frame'):
                 self._toggle_format_mode(mode)
@@ -78,6 +78,7 @@ class VideoFormatMixin:
                 width=140, height=36,
                 corner_radius=8,
                 fg_color="transparent",
+                text_color=("gray10", "gray70"),  # 確保未選中狀態也可見
                 hover_color=("white", "#404040"),
                 command=lambda m=mode_val: on_mode_change(m)
             )

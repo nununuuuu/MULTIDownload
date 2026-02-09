@@ -197,31 +197,106 @@ class CookiePasteDialog(ctk.CTkToplevel):
             from tkinter import messagebox
             messagebox.showwarning("警告", "Cookie 內容不能為空！")
             return
+        
+        # 格式識別
+        detected_format = self._detect_cookie_format(content)
+        
+        # 如果識別為「不支援」的格式，顯示提示
+        if detected_format == "unsupported":
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "格式識別結果", 
+                "⚠️ 無法識別 Cookie 格式\n\n"
+                "【支援的格式】\n"
+                "1. Netscape 格式 (cookies.txt)\n"
+                "   - 由「Get cookies.txt LOCALLY」擴充匯出\n"
+                "   - 每行以 Tab 分隔，包含 domain、path、name、value 等欄位\n\n"
+                "2. Header String 格式\n"
+                "   - 由瀏覽器 F12 開發者工具複製\n"
+                "   - 格式：NAME=value;NAME2=value2;...\n\n"
+                "【建議】\n"
+                "使用 Chrome/Edge 擴充「Get cookies.txt LOCALLY」\n"
+                "點擊 Export → Copy to clipboard，然後貼上。"
+            )
+            return
             
-        # 基本驗證：檢查是否包含 cookies.txt 的典型格式
-        # (Netscape HTTP Cookie File 格式通常以 # 開頭的註解或網域開始)
+        # 顯示識別結果並進行必要的轉換
+        format_names = {
+            "netscape": "Netscape 格式 ✓ (完美) ",
+            "header_string": "Header String 格式 → 正在轉換為 Netscape 格式..."
+        }
+        
+        # 記錄到 log (透過 parent)
+        if hasattr(self.master, 'log'):
+            self.master.log(f"[Cookie] 識別格式：{format_names.get(detected_format, detected_format)}")
+        
+        # 如果是 Header String 格式，進行轉換
+        if detected_format == "header_string":
+            content = self._convert_header_to_netscape(content)
+            if hasattr(self.master, 'log'):
+                cookie_count = len([l for l in content.split('\n') if l.strip() and not l.startswith('#')])
+                self.master.log(f"[Cookie] 轉換完成！共 {cookie_count} 個 Cookie")
+        
+        self.result = content
+        self.destroy()
+    
+    def _convert_header_to_netscape(self, content):
+        """將 HTTP Header String 格式轉換為 Netscape 格式"""
+        content = content.strip()
+        netscape_lines = ["# Netscape HTTP Cookie File", "# Converted from Header String format by MULTIDownload", ""]
+        
+        # 分割各個 cookie
+        cookies = content.split(";")
+        for cookie in cookies:
+            cookie = cookie.strip()
+            if not cookie or "=" not in cookie:
+                continue
+            
+            # 分割 name 和 value (只在第一個 = 處分割)
+            eq_pos = cookie.find("=")
+            name = cookie[:eq_pos].strip()
+            value = cookie[eq_pos+1:].strip()
+            
+            if not name:
+                continue
+            
+            # 產生 Netscape 格式行
+            # 格式: domain	flag	path	secure	expiration	name	value
+            line = f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}"
+            netscape_lines.append(line)
+        
+        return "\n".join(netscape_lines)
+    
+    def _detect_cookie_format(self, content):
+        """識別 Cookie 內容的格式"""
+        content = content.strip()
         lines = content.split('\n')
-        valid_lines = 0
+        
+        # 檢查 Netscape 格式
+        # 特徵：以 # 開頭的註解，或 Tab 分隔的行（至少 6 個欄位）
+        netscape_lines = 0
         for line in lines:
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
-            # cookies.txt 格式：domain, flag, path, secure, expiry, name, value (tab 分隔)
             parts = line.split('\t')
             if len(parts) >= 6:
-                valid_lines += 1
-                
-        if valid_lines == 0:
-            from tkinter import messagebox
-            if not messagebox.askyesno(
-                "格式警告", 
-                "此內容可能不是有效的 cookies.txt 格式。\n\n"
-                "是否仍要儲存？"
-            ):
-                return
+                netscape_lines += 1
         
-        self.result = content
-        self.destroy()
+        if netscape_lines > 0:
+            return "netscape"
+        
+        # 檢查 Header String 格式
+        # 特徵：NAME=value;NAME2=value2... (無換行，有多個 ; 和 =)
+        if len(lines) == 1 or (len(lines) <= 3 and all(';' in l or '=' in l for l in lines if l.strip())):
+            first_line = lines[0].strip()
+            if '=' in first_line and ';' in first_line:
+                return "header_string"
+            # 單個 cookie 的情況
+            if '=' in first_line and first_line.count('=') >= 1:
+                return "header_string"
+        
+        return "unsupported"
 
 
 class SearchResultDialog(ctk.CTkToplevel):

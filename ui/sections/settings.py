@@ -517,6 +517,53 @@ class AdvancedSettingsMixin:
                 text_color=("gray50", "gray60")
             )
     
+    def _convert_header_string_to_netscape(self, content):
+        """將 HTTP Header String 格式轉換為 Netscape 格式
+        
+        輸入範例: PREF=tz=Asia.Taipei;HSID=abc123;SID=xyz789
+        輸出範例:
+        # Netscape HTTP Cookie File
+        .youtube.com	TRUE	/	TRUE	0	PREF	tz=Asia.Taipei
+        .youtube.com	TRUE	/	TRUE	0	HSID	abc123
+        """
+        content = content.strip()
+        
+        # 檢查是否已經是 Netscape 格式 (以 # 開頭或包含 Tab 分隔)
+        if content.startswith("#") or "\t" in content:
+            return content  # 不需要轉換
+        
+        # 檢查是否是 Header String 格式 (NAME=value;NAME2=value2...)
+        if "=" in content and (";" in content or content.count("=") == 1):
+            netscape_lines = ["# Netscape HTTP Cookie File", "# Converted from Header String format by MULTIDownload", ""]
+            
+            # 分割各個 cookie
+            cookies = content.split(";")
+            for cookie in cookies:
+                cookie = cookie.strip()
+                if not cookie or "=" not in cookie:
+                    continue
+                
+                # 分割 name 和 value (只在第一個 = 處分割)
+                eq_pos = cookie.find("=")
+                name = cookie[:eq_pos].strip()
+                value = cookie[eq_pos+1:].strip()
+                
+                if not name:
+                    continue
+                
+                # 產生 Netscape 格式行
+                # 格式: domain	flag	path	secure	expiration	name	value
+                # 對於 YouTube，我們使用 .youtube.com
+                line = f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}"
+                netscape_lines.append(line)
+            
+            if len(netscape_lines) > 3:  # 有成功轉換至少一個 cookie
+                self.log(f"[Cookie] 已自動將 Header String 格式轉換為 Netscape 格式 ({len(netscape_lines) - 3} 個 cookie)")
+                return "\n".join(netscape_lines)
+        
+        # 無法識別的格式，原樣返回
+        return content
+
     def open_cookie_paste_dialog(self):
         """開啟貼上 Cookie 對話框"""
         import os
@@ -542,8 +589,11 @@ class AdvancedSettingsMixin:
                 # 確保目錄存在
                 os.makedirs(os.path.dirname(cookie_path), exist_ok=True)
                 
+                # [New] 自動轉換格式
+                converted_content = self._convert_header_string_to_netscape(dlg.result)
+                
                 with open(cookie_path, "w", encoding="utf-8") as f:
-                    f.write(dlg.result)
+                    f.write(converted_content)
                 
                 self.log("[設定變更] Cookie 內容已儲存")
                 self.show_toast("Cookie 已儲存！", color="#01814A")

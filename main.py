@@ -1,5 +1,23 @@
 import sys
 import os
+
+# ====================================================================
+# [Priority] 優先使用 lib 資料夾內的套件版本
+# 必須在所有其他導入之前執行，確保 yt_dlp 等核心套件使用正確版本
+# ====================================================================
+if getattr(sys, 'frozen', False):
+    app_path = os.path.dirname(sys.executable)
+else:
+    app_path = os.path.dirname(os.path.abspath(__file__))
+
+lib_path = os.path.join(app_path, "lib")
+if os.path.isdir(lib_path) and lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+    print(f"[Lib] 優先使用 lib 資料夾: {lib_path}")
+
+# ====================================================================
+# 標準導入
+# ====================================================================
 import subprocess
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
@@ -28,18 +46,7 @@ from ui.custom_titlebar import setup_custom_titlebar # [UI] Import Title Bar Log
 
 ctk.set_default_color_theme("blue")
 
-# 支援外部 Library 覆蓋與動態安裝
-if getattr(sys, 'frozen', False):
-    app_path = os.path.dirname(sys.executable)
-else:
-    app_path = os.path.dirname(os.path.abspath(__file__))
-
-# 將 lib 目錄加入搜尋路徑，優先讀取
-lib_path = os.path.join(app_path, "lib")
-if lib_path not in sys.path:
-    sys.path.insert(0, lib_path)
-
-# 嘗試載入 yt_dlp
+# 嘗試載入 yt_dlp (應該已經從 lib 優先載入)
 try:
     import yt_dlp
 except ImportError:
