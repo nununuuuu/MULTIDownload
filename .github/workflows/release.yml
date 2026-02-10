@@ -27,6 +27,25 @@ jobs:
           }
         shell: pwsh
 
+      - name: Extract Changelog Section
+        id: changelog
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $changelog = Get-Content "CHANGELOG.md" -Raw -Encoding UTF8
+          # 匹配 ## [版本號] 到下一個 ## [ 或檔案結尾
+          $pattern = "(?s)## \[$version\](.*?)(?=\r?\n## \[|$)"
+          $match = [regex]::Match($changelog, $pattern)
+
+          if ($match.Success) {
+            $content = $match.Groups[1].Value.Trim()
+            $content | Out-File -FilePath "release_notes.md" -Encoding UTF8
+            Write-Host "✅ Extracted changelog for version $version"
+          } else {
+            "無詳細更新日誌紀錄。" | Out-File -FilePath "release_notes.md" -Encoding UTF8
+            Write-Host "⚠️ No changelog entry found for $version"
+          }
+        shell: pwsh
+
       - name: Create and Push Tag
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
@@ -85,7 +104,8 @@ jobs:
           tag_name: ${{ steps.version.outputs.VERSION }}
           name: ${{ steps.version.outputs.VERSION }}
           files: dist/MULTIDownload.zip
-          generate_release_notes: true
+          body_path: release_notes.md
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -95,20 +115,23 @@ jobs:
           $version = "${{ steps.version.outputs.VERSION }}"
           $releaseUrl = "https://github.com/nununuuuu/MULTIDownload/releases/tag/$version"
 
-          # 讀取 CHANGELOG.md 並解析當前版本的更新內容
-          $changelog = Get-Content "CHANGELOG.md" -Raw -Encoding UTF8
+          # 讀取剛剛生成的 release_notes.md
+          $content = Get-Content "release_notes.md" -Raw -Encoding UTF8
 
-          # 找到當前版本的區塊 (從 ## [版本號] 到下一個 ## [ 或檔案結尾)
-          $pattern = "(?s)## \[$version\](.*?)(?=\r?\n## \[|$)"
-          $match = [regex]::Match($changelog, $pattern)
+          # 將多行內容處理為清單項目，適合於 Discord 顯示
+          $lines = $content -split "`r?`n" | Where-Object { $_ -match "^\s*-\s+" }
 
-          if ($match.Success) {
-            $content = $match.Groups[1].Value.Trim()
-            # 只提取清單項目 (以 - 開頭的行)，移除 ### 標題
-            $lines = $content -split "`r?`n" | Where-Object { $_ -match "^\s*-\s+" }
-            # 清理每行：移除前導空白和粗體標記，只保留純文字
+          if ($lines) {
+            # 清理每行：移除粗體標記，並統一列表符號，保留縮進以維持層級感
             $changes = ($lines | ForEach-Object { 
-              $_ -replace "^\s*-\s*", "• " -replace "\*\*\[([^\]]+)\]\*\*", "[$1]" -replace "\*\*([^*]+)\*\*", "$1"
+              # 1. 處理列表符號：保留縮進，將 "-" 替換為 "•"
+              $line = $_ -replace "^(\s*)-\s*", '$1• '
+              # 2. 移除所有 "**" 粗體標記
+              $line = $line -replace "\*\*", ""
+              # 3. 移除所有 "`" 行內程式碼標記
+              $line = $line -replace "`", ""
+              # 4. 移除多餘的末尾空格
+              $line.TrimEnd()
             }) -join "`n"
             
             # 限制長度 (Discord embed 限制)
@@ -116,7 +139,7 @@ jobs:
               $changes = $changes.Substring(0, 900) + "..."
             }
           } else {
-            $changes = "請查看 Release 頁面了解更多。"
+            $changes = "請前往 GitHub 查看詳細更新紀錄。"
           }
 
           $embed = @{
