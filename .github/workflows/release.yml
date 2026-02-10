@@ -52,17 +52,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 檢查 tag 是否已存在
+          # 獲取遠端標籤以檢查是否存在
+          git fetch --tags
           $tagExists = git tag -l $version
-          if ($tagExists) {
-            Write-Host "⚠️ Tag $version 已存在，將刪除並重建"
-            git tag -d $version
-            git push origin --delete $version 2>$null
-          }
 
-          git tag $version
-          git push origin $version
-          Write-Host "✅ 已建立並推送 Tag: $version"
+          if ($tagExists) {
+            Write-Host "ℹ️ 標籤 $version 已存在，將直接使用現有標籤進行發布。"
+          } else {
+            Write-Host "🚀 建立新標籤: $version"
+            git tag $version
+            git push origin $version
+            Write-Host "✅ 已成功建立並推送新標籤。"
+          }
         shell: pwsh
 
       - name: Set up Python 3.11
