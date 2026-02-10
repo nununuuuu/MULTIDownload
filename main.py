@@ -544,7 +544,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
             cookie_type=c_type, 
             cookie_path=c_path,
             user_agent=ua, 
-            proxy=proxy
+            proxy=proxy,
+            log_callback=self.log
         )
         
         # 回到主線程處理結果
@@ -1502,69 +1503,76 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         except: pass
 
     def on_download_finished(self, success, msg, task_id, config):
-        # [Fix] 如果任務已不再佇列中 (例如已強制取消)，忽略此回調以避免重複處理
-        if task_id not in self.active_queue_tasks:
-            return
+        def _finish_ui_logic():
+            nonlocal msg
+            # [Fix] 如果任務已不再佇列中 (例如已強制取消)，忽略此回調以避免重複處理
+            if task_id not in self.active_queue_tasks:
+                return
 
-        current_status = 'unknown'
-        if task_id in self.active_queue_tasks:
-            current_status = self.active_queue_tasks[task_id].get('status', 'finished')
+            current_status = 'unknown'
+            if task_id in self.active_queue_tasks:
+                current_status = self.active_queue_tasks[task_id].get('status', 'finished')
 
-        # Clean up Auto-Stop Timer if exists
-        if task_id in self.active_queue_tasks:
-            if 'autostop_timer' in self.active_queue_tasks[task_id]:
-                try: self.after_cancel(self.active_queue_tasks[task_id]['autostop_timer'])
+            # Clean up Auto-Stop Timer if exists
+            if task_id in self.active_queue_tasks:
+                if 'autostop_timer' in self.active_queue_tasks[task_id]:
+                    try: self.after_cancel(self.active_queue_tasks[task_id]['autostop_timer'])
+                    except: pass
+
+            if current_status == 'paused':
+                self.log(f"[已暫停] {msg}")
+                
+                last_p = self.active_queue_tasks[task_id].get('last_percent', 0)
+                if last_p < 0: last_p = 0
+                self.update_task_widget(task_id, last_p, "已暫停 (雙擊繼續)")
+                
+                self._update_task_buttons(task_id, 'paused')
+                return
+
+            # 錯誤訊息增強提示
+            if not success and current_status != 'cancelled':
+                if "Permission denied" in msg or "WinError 32" in msg or "unable to open" in msg:
+                    msg += " (提示: 目標檔案可能已存在或正被佔用，請關閉相關程式)"
+
+            status_prefix = "成功" if success else "失敗"
+            if current_status == 'cancelled': status_prefix = "已取消"
+            
+            self.log(f"[{status_prefix}] {msg}")
+            
+            # 移除已完成任務
+            if task_id in self.active_queue_tasks:
+                self.active_queue_tasks.pop(task_id)
+            
+            # 移除 UI Widget
+            self.remove_active_task_widget(task_id)
+            
+            # 加入歷史 
+            final_msg = "已取消" if current_status == 'cancelled' else msg
+            self.add_history_item(config, success, final_msg)
+                
+            if not success and current_status != 'cancelled':
+                 self.log(f"排程任務錯誤: {msg}") 
+
+            # 觸發檢查隊列，看是否需要啟動下一個
+            self.after(500, self.check_queue)
+            
+            if not self.active_queue_tasks and not self.download_queue:
+                try:
+                    self.progress_bar.configure(mode="determinate")
+                    self.progress_bar.set(0) 
+                    self.lbl_status.configure(text="準備就緒")
                 except: pass
-
-        if current_status == 'paused':
-            self.log(f"[已暫停] {msg}")
-            
-            last_p = self.active_queue_tasks[task_id].get('last_percent', 0)
-            if last_p < 0: last_p = 0
-            self.update_task_widget(task_id, last_p, "已暫停 (雙擊繼續)")
-            
-            self._update_task_buttons(task_id, 'paused')
-            return
-
-        # 錯誤訊息增強提示
-        if not success and current_status != 'cancelled':
-            if "Permission denied" in msg or "WinError 32" in msg or "unable to open" in msg:
-                msg += " (提示: 目標檔案可能已存在或正被佔用，請關閉相關程式)"
-
-        status_prefix = "成功" if success else "失敗"
-        if current_status == 'cancelled': status_prefix = "已取消"
+                
+                # Check notification setting
+                should_notify = True
+                if hasattr(self, 'var_notification'):
+                    should_notify = self.var_notification.get()
+                
+                if success and should_notify:
+                    messagebox.showinfo("完成", "所有排程任務已完成！")
         
-        self.log(f"[{status_prefix}] {msg}")
-        
-        # 移除已完成任務
-        if task_id in self.active_queue_tasks:
-            self.active_queue_tasks.pop(task_id)
-        
-        # 移除 UI Widget
-        self.remove_active_task_widget(task_id)
-        
-        # 加入歷史 
-        final_msg = "已取消" if current_status == 'cancelled' else msg
-        self.add_history_item(config, success, final_msg)
-            
-        if not success and current_status != 'cancelled':
-             self.log(f"排程任務錯誤: {msg}") 
-
-        # 觸發檢查隊列，看是否需要啟動下一個
-        self.after(500, self.check_queue)
-        
-        if not self.active_queue_tasks and not self.download_queue:
-            self.progress_bar.configure(mode="determinate")
-            self.progress_bar.set(0) 
-            self.lbl_status.configure(text="準備就緒")
-            
-            # Check notification setting
-            should_notify = True
-            if hasattr(self, 'var_notification'):
-                should_notify = self.var_notification.get()
-            
-            if success and should_notify:
-                messagebox.showinfo("完成", "所有排程任務已完成！")
+        # [Fix] 將所有 UI 邏輯排程至主線程執行，避免 TclError
+        self.after(0, _finish_ui_logic)
 
     def toggle_pause_task(self, task_id):
         # 排程任務

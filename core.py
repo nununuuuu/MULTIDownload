@@ -8,6 +8,10 @@ import glob
 import shutil
 import subprocess
 
+_scripts_dir = os.path.join(os.path.dirname(sys.executable), '')
+if _scripts_dir not in os.environ.get('PATH', ''):
+    os.environ['PATH'] = _scripts_dir + os.pathsep + os.environ.get('PATH', '')
+
 # Constants
 SUPPORTED_BROWSERS = ['chrome', 'firefox', 'edge', 'safari', 'opera', 'brave', 'vivaldi', 'chromium']
 ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -16,6 +20,21 @@ class YtDlpCore:
     def __init__(self):
         self.is_downloading = False
         self.stop_signal = False
+        # [Fix] 程式啟動時，在背景嘗試更新一次解密組件
+        threading.Thread(target=self._initial_update_check, daemon=True).start()
+
+    def _initial_update_check(self):
+        """背景執行一次最小更新檢查，確保 ejs 組件是最新的"""
+        try:
+            import yt_dlp
+            # 僅初始化 YoutubeDL 即可觸發 remote_components 下載，不需要解析任何影片
+            with yt_dlp.YoutubeDL({
+                'quiet': True, 'no_warnings': True,
+                'remote_components': ['ejs:github'],
+            }) as ydl:
+                pass
+        except: 
+            pass
 
     def fetch_video_info(self, url, cookie_type='none', cookie_path='', user_agent=None, proxy=None):
         try:
@@ -27,20 +46,35 @@ class YtDlpCore:
             'quiet': True, 
             'no_warnings': True,
             'noplaylist': True,
+            'format': 'best',  # [Fix] 避免帶 Cookie 時 YouTube SABR 格式匹配失敗
+            'ignore_no_formats_error': True,  # [Fix] 分析階段不應因格式問題中斷
+            'remote_components': ['ejs:github'],  # [Fix] 自動下載最新 JS challenge solver
         }
         if user_agent: ydl_opts['user_agent'] = user_agent
         if proxy: ydl_opts['proxy'] = proxy
 
         # 支援多種瀏覽器 Cookie 讀取
+        has_cookies = False
         if cookie_type in SUPPORTED_BROWSERS:
             ydl_opts['cookiesfrombrowser'] = (cookie_type, )
+            has_cookies = True
         elif cookie_type == 'file' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+                has_cookies = True
         elif cookie_type == 'paste' and cookie_path:
-            # 貼上模式：使用預設路徑的貼上 cookies
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+                has_cookies = True
+
+        # [Fix] 根據 Cookie 狀態選擇 player_client (ios/android 不支援 Cookie)
+        if has_cookies:
+            clients = ['web', 'web_embedded']
+        else:
+            clients = ['ios', 'android', 'web_embedded', 'web']
+        ydl_opts['extractor_args'] = {
+            'youtube': {'player_client': clients, 'player_skip_subscribe_check': True}
+        }
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -60,7 +94,7 @@ class YtDlpCore:
                     'http_headers': info.get('http_headers', {})
                 }
         except Exception as e:
-            return {'error': str(e)}
+            return {'error': f"分析失敗: {str(e) or repr(e)}"}
 
     def fetch_playlist_info(self, url, cookie_type='none', cookie_path='', user_agent=None, proxy=None):
         try:
@@ -79,14 +113,27 @@ class YtDlpCore:
         if user_agent: ydl_opts['user_agent'] = user_agent
         if proxy: ydl_opts['proxy'] = proxy
 
+        has_cookies = False
         if cookie_type in SUPPORTED_BROWSERS:
             ydl_opts['cookiesfrombrowser'] = (cookie_type, )
+            has_cookies = True
         elif cookie_type == 'file' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+                has_cookies = True
         elif cookie_type == 'paste' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+                has_cookies = True
+
+        # [Fix] 根據 Cookie 狀態選擇 player_client
+        if has_cookies:
+            clients = ['web', 'web_embedded']
+        else:
+            clients = ['ios', 'android', 'web_embedded', 'web']
+        ydl_opts['extractor_args'] = {
+            'youtube': {'player_client': clients, 'player_skip_subscribe_check': True}
+        }
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -129,9 +176,9 @@ class YtDlpCore:
                     'http_headers': info.get('http_headers', {})
                 }
         except Exception as e:
-            return {'error': str(e)}
+            return {'error': f"播放清單分析失敗: {str(e) or repr(e)}"}
 
-    def search_videos(self, query, max_results=10, cookie_type='none', cookie_path='', user_agent=None, proxy=None):
+    def search_videos(self, query, max_results=10, cookie_type='none', cookie_path='', user_agent=None, proxy=None, log_callback=None):
         """同時搜尋 YouTube 和 Bilibili 影片"""
         try:
             import yt_dlp
@@ -143,20 +190,33 @@ class YtDlpCore:
             'no_warnings': True,
             'extract_flat': 'in_playlist',
             'skip_download': True,
-            'ignoreerrors': True,  # 忽略單一平台錯誤
+            'ignoreerrors': True,
         }
         
         if user_agent: ydl_opts['user_agent'] = user_agent
         if proxy: ydl_opts['proxy'] = proxy
 
+        has_cookies = False
         if cookie_type in SUPPORTED_BROWSERS:
             ydl_opts['cookiesfrombrowser'] = (cookie_type, )
+            has_cookies = True
         elif cookie_type == 'file' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+                has_cookies = True
         elif cookie_type == 'paste' and cookie_path:
             if os.path.exists(cookie_path):
                 ydl_opts['cookiefile'] = cookie_path
+                has_cookies = True
+
+        # [Fix] 根據 Cookie 狀態選擇 player_client
+        if has_cookies:
+            clients = ['web', 'web_embedded']
+        else:
+            clients = ['ios', 'android', 'web_embedded', 'web']
+        ydl_opts['extractor_args'] = {
+            'youtube': {'player_client': clients}
+        }
 
         # 每個平台各抓 max_results 筆 (多抓幾筆以補足過濾)
         per_platform = max_results + 5
@@ -165,6 +225,7 @@ class YtDlpCore:
         
         # 搜尋 YouTube
         yt_results = []
+        yt_failed = False
         try:
             yt_url = f"ytsearch{per_platform}:{query}"
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -174,15 +235,28 @@ class YtDlpCore:
                         parsed = self._parse_search_entry(entry, 'youtube')
                         if parsed:
                             yt_results.append(parsed)
-        except Exception as e:
-            print(f"YouTube 搜尋錯誤: {e}")
+            if not yt_results: yt_failed = True # 無結果也視為失敗
+        except Exception:
+            yt_failed = True
+            if log_callback: log_callback("[警告] YouTube 搜尋錯誤")
         
         # 截取 YouTube 前 max_results 筆
         all_results.extend(yt_results[:max_results])
         
         # 搜尋 Bilibili (使用官方 API)
-        bili_results = self._search_bilibili_api(query, max_results)
+        bili_results = []
+        bili_failed = False
+        try:
+            bili_results = self._search_bilibili_api(query, max_results)
+            if not bili_results: bili_failed = True
+        except Exception:
+            bili_failed = True
+            if log_callback: log_callback("[警告] Bilibili 搜尋錯誤")
+        
         all_results.extend(bili_results)
+
+        if yt_failed and bili_failed:
+             if log_callback: log_callback("[錯誤] 搜尋暫時無法使用")
 
         # 排序由 UI 彈窗處理
         return {'results': all_results}
@@ -498,8 +572,20 @@ class YtDlpCore:
                      if log_callback: log_callback("分段下載完畢 (Video/Audio)，準備合併...")
             def info(self, msg): pass
             def warning(self, msg):
-                # [Filter] 過濾掉常見但不需要使用者介入的警告
-                if "JavaScript runtime" in msg or "SABR streaming" in msg:
+                # [Filter] 
+                # 允許顯示更新進度，這讓使用者能知道正在下載新組件
+                if "Downloading remote component" in msg or "Updated remote component" in msg:
+                    if log_callback: log_callback(f"[系統] {msg}")
+                    return
+                
+                # 過濾掉不會導致核心失敗的技術性警告
+                ignore_keywords = [
+                    "JavaScript runtime", "SABR streaming", 
+                    "solver lib script", "solver core script", 
+                    "Remote components", "PO Token", "GVS PO Token",
+                    "Skipping unsupported client"
+                ]
+                if any(k in msg for k in ignore_keywords):
                     return
                 if log_callback: log_callback(f"[警告] {self._clean(msg)}")
             def error(self, msg):
@@ -521,10 +607,33 @@ class YtDlpCore:
             'ffmpeg_location': ffmpeg_loc,
             'windowsfilenames': True, 'trim_file_name': 200,     
             'quiet': True, 'no_warnings': True,
-            'logger': MyLogger()
+            'logger': MyLogger(),
+            'remote_components': ['ejs:github'],  # [Fix] 自動下載最新 JS challenge solver
+            'file_access_retries': 10,  # [Fix] 增加檔案存取重試次數 (防毒軟體鎖檔)
+            'retries': 5,  # 網路重試
+            'referer': 'https://www.youtube.com/',
         }
-        if config.get('user_agent'): opts['user_agent'] = config['user_agent']
+        
         if config.get('proxy'): opts['proxy'] = config['proxy']
+        
+        if config.get('user_agent'): 
+            opts['user_agent'] = config['user_agent']
+            # 若手動指定 UA，則不使用 impersonate 以免衝突 (impersonate 會自帶 UA)
+            opts.pop('impersonate', None)
+        
+        if not config.get('user_agent'):
+             opts.pop('user_agent', None) 
+        
+        # [Fix] Metadata 映射 (不包含日期，日期由 mutagen 在下載後修正)
+        opts['parse_metadata'] = [
+            'video:uploader:%(artist)s',
+            'video:description:%(comment)s',
+        ]
+        
+        # [Fix] 防止 FFmpegMetadata 寫入錯誤的 date (YYYYMMDD 會被解讀成亂碼年份)
+        opts.setdefault('postprocessor_args', {})
+        opts['postprocessor_args'].setdefault('FFmpegMetadata', [])
+        opts['postprocessor_args']['FFmpegMetadata'].extend(['-metadata', 'date='])
         
         # Post-Processing Options
         # [FIX] 初始化 Post-Processors 列表
@@ -533,7 +642,6 @@ class YtDlpCore:
 
         if config.get('embed_thumbnail'): 
             opts['writethumbnail'] = True # 下載封面
-            # opts['embedthumbnail'] = True # [Remove] 移除自動 flag
             opts['postprocessors'].append({
                 'key': 'EmbedThumbnail',
             })
@@ -545,15 +653,6 @@ class YtDlpCore:
                 'add_metadata': True,
             })
 
-            # [Fix] 將正則表達式提取改為直接對應內建欄位，更穩定且支援更多來源
-            opts['parse_metadata'] = [
-                'uploader:artist',
-                'description:comment',
-                '%(upload_year)s:%(date)s',
-                '%(upload_year)s:%(year)s',
-                '%(release_year)s:%(date)s',
-                '%(release_year)s:%(year)s',
-            ]
 
         if config.get('sponsorblock'): 
             # 直接使用使用者勾選的類別列表
@@ -562,7 +661,6 @@ class YtDlpCore:
             
             opts['sponsorblock_remove'] = sb_list
             opts['force_keyframes_at_cuts'] = True 
-            # opts['sponsorblock_api'] = 'https://sponsor.ajay.app' # 預設 API (通常不用改)
 
         # Hardware Acceleration
         hw_mode = config.get('hardware_accel', '')
@@ -575,10 +673,10 @@ class YtDlpCore:
         
         if pp_args:
              if log_callback: log_callback(f"[系統] 已啟用硬體加速: {hw_mode}")
-             opts['postprocessor_args'] = {
-                 'Merger': pp_args,
-                 'VideoConvertor': pp_args
-             }
+             opts['postprocessor_args'].setdefault('Merger', [])
+             opts['postprocessor_args']['Merger'].extend(pp_args)
+             opts['postprocessor_args'].setdefault('VideoConvertor', [])
+             opts['postprocessor_args']['VideoConvertor'].extend(pp_args)
 
 
         # Live Stream Logic
@@ -590,14 +688,26 @@ class YtDlpCore:
             opts['live_from_start'] = True
 
 
-
         # Cookie 設定
+        has_cookies = False
         if config['cookie_type'] in SUPPORTED_BROWSERS:
             opts['cookiesfrombrowser'] = (config['cookie_type'], )
+            has_cookies = True
         elif config['cookie_type'] == 'file' and config['cookie_path']:
             opts['cookiefile'] = config['cookie_path']
+            has_cookies = True
         elif config['cookie_type'] == 'paste' and config['cookie_path']:
             opts['cookiefile'] = config['cookie_path']
+            has_cookies = True
+
+        # [Fix] 根據 Cookie 狀態選擇 player_client (ios/android 不支援 Cookie)
+        if has_cookies:
+            clients = ['web', 'web_embedded']
+        else:
+            clients = ['ios', 'android', 'web_embedded', 'web']
+        opts['extractor_args'] = {
+            'youtube': {'player_client': clients, 'player_skip_subscribe_check': True}
+        }
 
         # 1. 解析目標 Bitrate
         target_bitrate = None
@@ -766,7 +876,7 @@ class YtDlpCore:
 
         success = False
         message = ""
-        max_retries = 3
+        max_retries = 5
         for attempt in range(max_retries):
             try:
                 if attempt == 0:
@@ -778,8 +888,38 @@ class YtDlpCore:
                     # 嘗試清理可能殘留的暫存檔 (雖難以精確預測檔名，但可依賴 yt-dlp 的 overwrites)
 
                 with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([config['url']])
+                    info = ydl.extract_info(config['url'], download=True)
                 
+                # [Fix] 下載成功後，用 mutagen 修正 MP4/M4A 的日期標籤
+                if info and config.get('add_metadata'):
+                    try:
+                        upload_date = info.get('upload_date', '')
+                        # 將 YYYYMMDD 格式化為 YYYY-MM-DD
+                        if upload_date and len(upload_date) >= 8:
+                            date_str = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
+                        elif upload_date and len(upload_date) >= 4:
+                            date_str = upload_date[:4]
+                        else:
+                            date_str = ''
+                        if date_str:
+                            # 取得最終輸出檔案路徑
+                            filepath = info.get('filepath') or info.get('requested_downloads', [{}])[0].get('filepath', '')
+                            if filepath and os.path.exists(filepath):
+                                ext = os.path.splitext(filepath)[1].lower()
+                                if ext in ('.mp4', '.m4a', '.m4v'):
+                                    from mutagen.mp4 import MP4
+                                    audio = MP4(filepath)
+                                    audio.tags['\xa9day'] = [date_str]  # ©day = YYYY-MM-DD
+                                    audio.save()
+                                elif ext == '.mp3':
+                                    from mutagen.mp3 import MP3
+                                    from mutagen.id3 import TDRC
+                                    audio = MP3(filepath)
+                                    audio.tags.add(TDRC(encoding=3, text=[date_str]))
+                                    audio.save()
+                    except Exception as meta_e:
+                        if log_callback: log_callback(f"[警告] 日期修正失敗: {meta_e}")
+
                 success = True
                 message = "下載成功！"
                 if progress_callback: progress_callback(1.0, "下載完成 100%")
@@ -812,13 +952,145 @@ class YtDlpCore:
                 if "使用者手動停止" in err_msg: 
                     message = "下載已取消"
                     break
-                elif "WinError 32" in err_msg:
-                    # 如果在 DownloadError 訊息中包含 WinError 32
-                    if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。可能防毒軟體正在掃描。")
-                    if attempt == max_retries - 1:
-                        message = "檔案被佔用 (WinError 32)\n請關閉防毒軟體或檢查檔案是否被開啟。"
+                elif "requested format is not available" in err_msg.lower():
+                    # [Fix] YouTube SABR 格式問題：自動降級為最寬鬆的格式重試
+                    if opts.get('format') != 'best':
+                        if log_callback: log_callback(f"[警告] 指定格式不可用 (可能是 YouTube SABR 串流限制)，自動降級為最佳可用格式重試...")
+                        opts['format'] = 'best'
+                        # 移除可能衝突的合併格式設定
+                        opts.pop('merge_output_format', None)
+                        continue
+                    else:
+                        message = f"下載錯誤: 無可用格式 ({err_msg})"
                         break
-                    continue 
+                elif "416" in err_msg or "requested range not satisfiable" in err_msg.lower():
+                    # [Fix] HTTP 416: 殘留的 .part 檔案導致續傳範圍無效
+                    if log_callback: log_callback(f"[警告] HTTP 416: 暫存檔與伺服器不一致，正在清理殘檔並重新下載...")
+                    # 清理所有可能的暫存檔
+                    try:
+                        save_dir = config.get('save_path', os.getcwd())
+                        for f in glob.glob(os.path.join(save_dir, "*.part")):
+                            try: os.remove(f); 
+                            except: pass
+                        for f in glob.glob(os.path.join(save_dir, "*.ytdl")):
+                            try: os.remove(f); 
+                            except: pass
+                    except: pass
+                    # 關閉續傳模式，強制全新下載
+                    opts['continuedl'] = False
+                    if attempt < max_retries - 1:
+                        time.sleep(2)
+                        continue
+                    else:
+                        message = f"下載錯誤: 暫存檔衝突無法修復 (HTTP 416)"
+                        break
+                elif "WinError 32" in err_msg:
+                    # [Fix] 終極通用版 WinError 32 修復：處理所有臨時檔案改名
+                    if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。防毒軟體正在掃描，嘗試手動修復...")
+                    
+                    rename_success = False
+                    import re as _re
+                    # [優化] 通用匹配邏輯：抓取任何 A -> B 的改名路徑
+                    match = _re.search(r"'(.+?)'\s*->\s*'(.+?)'", err_msg)
+                    if match:
+                        src_path = match.group(1)
+                        dst_path = match.group(2)
+                        
+                        # 如果是常見的臨時檔案後綴，且確實存在
+                        if os.path.exists(src_path):
+                            for retry in range(15):
+                                try:
+                                    time.sleep(2)
+                                    # 防呆：如果目標檔案已存在且不等於來源，先移除它
+                                    if os.path.exists(dst_path) and os.path.abspath(src_path) != os.path.abspath(dst_path):
+                                        try: os.remove(dst_path)
+                                        except: pass
+                                    
+                                    os.rename(src_path, dst_path)
+                                    rename_success = True
+                                    if log_callback: log_callback(f"[修復] 改名成功！(於等待 {(retry+1)*2} 秒後解決鎖定)")
+                                    break
+                                except OSError:
+                                    if log_callback and retry % 3 == 0: 
+                                        log_callback(f"[等待] 防毒軟體掃描中... ({retry+1}/15)")
+                    
+                    if rename_success:
+                        # [Cleanup] 手動重命名成功後，清理 yt-dlp 遺留的片段文件
+                        # 等待防毒軟體釋放檔案鎖定
+                        time.sleep(3)
+                        try:
+                            base_name = os.path.splitext(dst_path)[0]
+                            save_dir = os.path.dirname(dst_path)
+                            video_stem = os.path.basename(base_name)
+                            # 搜尋同目錄下所有同名的分段檔 (如 .f401.mp4, .f251.webm)
+                            for f in os.listdir(save_dir):
+                                f_path = os.path.join(save_dir, f)
+                                if f_path == os.path.abspath(dst_path):
+                                    continue
+                                if f.startswith(video_stem) and f != os.path.basename(dst_path):
+                                    try:
+                                        os.remove(f_path)
+                                        if log_callback: log_callback(f"[清理] 已移除殘留分段檔: {f}")
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        
+                        success = True
+                        message = "下載成功！"
+                        break
+                    else:
+                        if attempt < max_retries - 1:
+                            time.sleep(5)
+                            continue
+                elif "video unavailable" in err_msg.lower() or "is not available" in err_msg.lower():
+                    # [Fix] YouTube "Video unavailable" 自動修復策略
+                    # 根據 Cookie 狀態選擇適合的 player_client 重試
+                    has_ck = 'cookiesfrombrowser' in opts or 'cookiefile' in opts
+                    if attempt == 0:
+                        # 策略 1: 切換至不同的 player_client 組合
+                        if has_ck:
+                            # 有 Cookie → 只用支援 Cookie 的 client
+                            retry_clients = ['mweb', 'web', 'web_embedded']
+                        else:
+                            # 無 Cookie → 嘗試不同的 client 組合
+                            retry_clients = ['mweb', 'ios', 'android']
+                        if log_callback: log_callback(f"[警告] 影片不可用，正在切換播放器介面重試...")
+                        opts['extractor_args'] = {
+                            'youtube': {
+                                'player_client': retry_clients,
+                                'player_skip_subscribe_check': True
+                            }
+                        }
+                        time.sleep(2)
+                        continue
+                    elif attempt == 1:
+                        # 策略 2: 切換 Cookie 狀態
+                        if has_ck:
+                            # 有 Cookie → 移除 Cookie，改用無 Cookie 的 client
+                            if log_callback: log_callback(f"[警告] 嘗試移除 Cookie 並以訪客模式重試...")
+                            opts.pop('cookiesfrombrowser', None)
+                            opts.pop('cookiefile', None)
+                            retry_clients = ['ios', 'android', 'web_embedded']
+                        else:
+                            if log_callback: log_callback(f"[警告] 訪客模式無法存取，嘗試最後一組播放器組合...")
+                            retry_clients = ['web', 'web_embedded']
+                        opts['extractor_args'] = {
+                            'youtube': {
+                                'player_client': retry_clients,
+                                'player_skip_subscribe_check': True
+                            }
+                        }
+                        time.sleep(2)
+                        continue
+                    else:
+                        # 所有策略都失敗
+                        if not config.get('cookie_type') or config['cookie_type'] == 'none':
+                            hint = "\n💡 提示: 此影片可能需要登入才能觀看，請至設定頁面啟用瀏覽器 Cookie。"
+                        else:
+                            hint = "\n💡 提示: 此影片可能有地區限制或已被刪除，請嘗試使用 VPN 或確認連結是否正確。"
+                        message = f"影片不可用: YouTube 拒絕存取此影片。{hint}"
+                        break
                 elif ("could not find" in err_msg.lower() or "cookie database" in err_msg.lower() or "copy" in err_msg.lower()) and "cookie" in err_msg.lower():
                     if 'cookiesfrombrowser' in opts:
                         if log_callback: log_callback(f"[警告] 無法讀取瀏覽器 Cookie (或是瀏覽器開啟中)，將自動切換為訪客模式重試...")
@@ -837,8 +1109,30 @@ class YtDlpCore:
                 err_str = str(e)
                 # 處理通用 WinError 32 (PermissionError 等)
                 if "WinError 32" in err_str or "Permission denied" in err_str:
-                     if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。通常是防毒軟體正在掃描合併後的檔案。")
+                     if log_callback: log_callback(f"[警告] 檔案鎖定衝突 (WinError 32)。防毒軟體正在掃描，嘗試手動修復...")
+                     import re as _re
+                     match = _re.search(r"'(.+?)'\s*->\s*'(.+?)'", err_str)
+                     if match:
+                         src_path = match.group(1)
+                         dst_path = match.group(2)
+                         if os.path.exists(src_path):
+                             for retry in range(15):
+                                 try:
+                                     time.sleep(2)
+                                     if os.path.exists(dst_path) and os.path.abspath(src_path) != os.path.abspath(dst_path):
+                                         try: os.remove(dst_path)
+                                         except: pass
+                                     os.rename(src_path, dst_path)
+                                     success = True
+                                     message = "下載成功！"
+                                     if log_callback: log_callback(f"[修復] 改名成功！(等待了 {(retry+1)*2} 秒)")
+                                     break
+                                 except OSError:
+                                     pass
+                             if success: break
+                     
                      if attempt < max_retries - 1:
+                         time.sleep(7)
                          continue # Retry
                 
                 # 若非可重試錯誤或已達最大重試次數

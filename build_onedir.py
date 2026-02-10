@@ -15,53 +15,56 @@ def build():
     app_icon = os.path.join(icon_dir, "1.ico")
     
     # --- [New] 自動更新版本號 ---
-    import datetime
-    import re
-    
-    new_ver = datetime.datetime.now().strftime("%Y.%m.%d")
-    const_file = os.path.join(project_root, "constants.py")
-    
-    if os.path.exists(const_file):
-        try:
-            with open(const_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            
-            # 尋找 APP_VERSION = "..." 
-            match = re.search(r'APP_VERSION\s*=\s*["\'](.*?)["\']', content)
-            if match:
-                existing_ver = match.group(1)
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        print("★ 偵測到 GitHub Actions 環境，跳過自動版本更新，以 constants.py 原始設定為準。")
+    else:
+        import datetime
+        import re
+        
+        new_ver = datetime.datetime.now().strftime("%Y.%m.%d")
+        const_file = os.path.join(project_root, "constants.py")
+        
+        if os.path.exists(const_file):
+            try:
+                with open(const_file, "r", encoding="utf-8") as f:
+                    content = f.read()
                 
-                # 自動遞增邏輯
-                if existing_ver.startswith(new_ver):
-                    # 同一天: 檢查是否有 _v 後綴
-                    suffix_match = re.search(r'_v(\d+)$', existing_ver)
-                    if suffix_match:
-                        # 已有 _vN，則 N+1
-                        current_num = int(suffix_match.group(1))
-                        next_num = current_num + 1
-                        final_ver = re.sub(r'_v\d+$', f'_v{next_num}', existing_ver)
-                        print(f"★ 當日重新打包，版本號自動遞增: {existing_ver} -> {final_ver}")
+                # 尋找 APP_VERSION = "..." 
+                match = re.search(r'APP_VERSION\s*=\s*["\'](.*?)["\']', content)
+                if match:
+                    existing_ver = match.group(1)
+                    
+                    # 自動遞增邏輯
+                    if existing_ver.startswith(new_ver):
+                        # 同一天: 檢查是否有 _v 後綴
+                        suffix_match = re.search(r'_v(\d+)$', existing_ver)
+                        if suffix_match:
+                            # 已有 _vN，則 N+1
+                            current_num = int(suffix_match.group(1))
+                            next_num = current_num + 1
+                            final_ver = re.sub(r'_v\d+$', f'_v{next_num}', existing_ver)
+                            print(f"★ 當日重新打包，版本號自動遞增: {existing_ver} -> {final_ver}")
+                        else:
+                            # 無後綴，加上 _v2
+                            final_ver = f"{existing_ver}_v2"
+                            print(f"★ 當日重新打包，新增版本後綴: {existing_ver} -> {final_ver}")
                     else:
-                        # 無後綴，加上 _v2
-                        final_ver = f"{existing_ver}_v2"
-                        print(f"★ 當日重新打包，新增版本後綴: {existing_ver} -> {final_ver}")
+                        # 不同天: 重置為今日日期
+                        final_ver = new_ver
+                        print(f"★ 日期變更，重置版本號為: {final_ver}")
                 else:
-                    # 不同天: 重置為今日日期
                     final_ver = new_ver
-                    print(f"★ 日期變更，重置版本號為: {final_ver}")
-            else:
-                final_ver = new_ver
 
-            # 執行替換
-            new_content = re.sub(r'APP_VERSION\s*=\s*["\'].*?["\']', f'APP_VERSION = "{final_ver}"', content)
-            
-            if content != new_content:
-                with open(const_file, "w", encoding="utf-8") as f:
-                    f.write(new_content)
-            else:
-                pass
-        except Exception as e:
-            print(f"⚠ 更新版本號失敗: {e}")
+                # 執行替換
+                new_content = re.sub(r'APP_VERSION\s*=\s*["\'].*?["\']', f'APP_VERSION = "{final_ver}"', content)
+                
+                if content != new_content:
+                    with open(const_file, "w", encoding="utf-8") as f:
+                        f.write(new_content)
+                else:
+                    pass
+            except Exception as e:
+                print(f"⚠ 更新版本號失敗: {e}")
     # ----------------------------
 
     # --- [New] 生成暫存日誌檔案 ui/changelog_gen.py ---

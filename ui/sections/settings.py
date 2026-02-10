@@ -281,7 +281,7 @@ class AdvancedSettingsMixin:
         
         f_header = ctk.CTkFrame(cookie_card, fg_color="transparent")
         f_header.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_header, text="使用 cookies.txt或直接貼上 cookies (穩定)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="gray").pack(side="left")
+        ctk.CTkLabel(f_header, text="使用 cookies.txt 或直接貼上 cookies (穩定)", font=("Microsoft JhengHei UI", 14, "bold"), text_color="gray").pack(side="left")
         
         lbl_f_help = ctk.CTkLabel(f_header, text="❓", cursor="hand2", font=self.font_small)
         lbl_f_help.pack(side="left", padx=5)
@@ -523,11 +523,18 @@ class AdvancedSettingsMixin:
         輸入範例: PREF=tz=Asia.Taipei;HSID=abc123;SID=xyz789
         輸出範例:
         # Netscape HTTP Cookie File
-        .youtube.com	TRUE	/	TRUE	0	PREF	tz=Asia.Taipei
-        .youtube.com	TRUE	/	TRUE	0	HSID	abc123
+        .youtube.com	TRUE	/	FALSE	1739180400	PREF	tz=Asia.Taipei
+        .youtube.com	TRUE	/	FALSE	1739180400	HSID	abc123
         """
+        import time
         content = content.strip()
         
+        # 清理可能包含的 Header 前綴
+        if content.lower().startswith("cookie:"):
+            content = content[7:].strip()
+        elif content.lower().startswith("set-cookie:"):
+            content = content[11:].strip()
+            
         # 檢查是否已經是 Netscape 格式 (以 # 開頭或包含 Tab 分隔)
         if content.startswith("#") or "\t" in content:
             return content  # 不需要轉換
@@ -536,8 +543,25 @@ class AdvancedSettingsMixin:
         if "=" in content and (";" in content or content.count("=") == 1):
             netscape_lines = ["# Netscape HTTP Cookie File", "# Converted from Header String format by MULTIDownload", ""]
             
+            # 設定過期時間為一年後 (避免 expiration=0 導致 cookie 被視為無效)
+            expire_ts = str(int(time.time()) + 365 * 24 * 3600)
+            
+            # 需要同時寫入 .google.com 的 cookie 名稱 (YouTube 認證必備)
+            google_auth_cookies = {
+                'SAPISID', '__Secure-1PAPISID', '__Secure-3PAPISID',
+                'SID', '__Secure-1PSID', '__Secure-3PSID',
+                'SSID', 'HSID', 'APISID',
+                '__Secure-1PSIDTS', '__Secure-3PSIDTS',
+                'SIDCC', '__Secure-1PSIDCC', '__Secure-3PSIDCC',
+                'NID', 'LOGIN_INFO', 'VISITOR_PRIVACY_METADATA'
+            }
+            
             # 分割各個 cookie
+            # [Fix] 處理可能存在的換行
+            content = content.replace("\n", "").replace("\r", "")
             cookies = content.split(";")
+            
+            count = 0
             for cookie in cookies:
                 cookie = cookie.strip()
                 if not cookie or "=" not in cookie:
@@ -551,11 +575,24 @@ class AdvancedSettingsMixin:
                 if not name:
                     continue
                 
+                # 判斷 secure flag
+                secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
+                
                 # 產生 Netscape 格式行
                 # 格式: domain	flag	path	secure	expiration	name	value
-                # 對於 YouTube，我們使用 .youtube.com
-                line = f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}"
+                line = f".youtube.com\tTRUE\t/\t{secure}\t{expire_ts}\t{name}\t{value}"
                 netscape_lines.append(line)
+                count += 1
+                
+                # 若為 Google 認證 cookie，同時寫入 .google.com 域名
+                if name in google_auth_cookies:
+                    line_google = f".google.com\tTRUE\t/\t{secure}\t{expire_ts}\t{name}\t{value}"
+                    netscape_lines.append(line_google)
+            
+            if count > 0:  # 有成功轉換至少一個 cookie
+                self.log(f"[Cookie] 識別格式：Header String 格式 → 正在轉換為 Netscape 格式...")
+                self.log(f"[Cookie] 轉換完成！共 {count} 個 Cookie")
+                return "\n".join(netscape_lines)
             
             if len(netscape_lines) > 3:  # 有成功轉換至少一個 cookie
                 self.log(f"[Cookie] 已自動將 Header String 格式轉換為 Netscape 格式 ({len(netscape_lines) - 3} 個 cookie)")

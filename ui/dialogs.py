@@ -242,8 +242,22 @@ class CookiePasteDialog(ctk.CTkToplevel):
     
     def _convert_header_to_netscape(self, content):
         """將 HTTP Header String 格式轉換為 Netscape 格式"""
+        import time
         content = content.strip()
         netscape_lines = ["# Netscape HTTP Cookie File", "# Converted from Header String format by MULTIDownload", ""]
+        
+        # 設定過期時間為一年後 (避免 expiration=0 導致 cookie 被視為無效)
+        expire_ts = str(int(time.time()) + 365 * 24 * 3600)
+        
+        # 需要同時寫入 .google.com 的 cookie 名稱 (YouTube 認證必備)
+        google_auth_cookies = {
+            'SAPISID', '__Secure-1PAPISID', '__Secure-3PAPISID',
+            'SID', '__Secure-1PSID', '__Secure-3PSID',
+            'SSID', 'HSID', 'APISID',
+            '__Secure-1PSIDTS', '__Secure-3PSIDTS',
+            'SIDCC', '__Secure-1PSIDCC', '__Secure-3PSIDCC',
+            'NID', 'LOGIN_INFO'
+        }
         
         # 分割各個 cookie
         cookies = content.split(";")
@@ -260,10 +274,18 @@ class CookiePasteDialog(ctk.CTkToplevel):
             if not name:
                 continue
             
+            # 判斷 secure flag (以 __Secure- 開頭的 cookie 需要 secure)
+            secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
+            
             # 產生 Netscape 格式行
             # 格式: domain	flag	path	secure	expiration	name	value
-            line = f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}"
+            line = f".youtube.com\tTRUE\t/\t{secure}\t{expire_ts}\t{name}\t{value}"
             netscape_lines.append(line)
+            
+            # 若為 Google 認證 cookie，同時寫入 .google.com 域名
+            if name in google_auth_cookies:
+                line_google = f".google.com\tTRUE\t/\t{secure}\t{expire_ts}\t{name}\t{value}"
+                netscape_lines.append(line_google)
         
         return "\n".join(netscape_lines)
     

@@ -21,6 +21,7 @@ dist/
 bin/
 lib/
 *.exe
+data/
 
 # --- Temporary / Generated Files ---
 ui/changelog_gen.py
@@ -31,10 +32,6 @@ ui/changelog_gen.py
 .history/
 
 
-# --- Build Scripts ---
-
-
-# --- OS Specific ---
 
 
 

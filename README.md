@@ -1,4 +1,4 @@
-# MULTIDownload (2026/02/10)
+# MULTIDownload (2026/02/11)
 
 MULTIDownload 是一款基於 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 開發的現代化桌面下載工具，結合了 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 打造的美觀介面，專為解決複雜指令操作而生。
 

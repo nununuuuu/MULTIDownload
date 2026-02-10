@@ -926,30 +926,34 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
              self.txt_log.configure(state="disabled")
         
     def log(self, msg):
-        timestamp = time.strftime("%H:%M:%S")
-        full_msg = f"[{timestamp}] {msg}\n"
+        def _log_ui_logic():
+            timestamp = time.strftime("%H:%M:%S")
+            full_msg = f"[{timestamp}] {msg}\n"
+            
+            tag = "info"
+            if any(x in msg for x in ["[錯誤]", "Error", "失敗", "系統錯誤"]):
+                tag = "error"
+            elif any(x in msg for x in ["[警告]", "Warning", "無效"]):
+                tag = "warning"
+            elif any(x in msg for x in ["成功", "完成", "啟動下載"]):
+                tag = "success"
+                
+            try:
+                self.txt_log.configure(state="normal")
+                
+                self.txt_log.tag_config("error", foreground="#FF5555")   
+                self.txt_log.tag_config("warning", foreground="#FFB86C") 
+                self.txt_log.tag_config("success", foreground="#50FA7B")
+                self.txt_log.tag_config("info", foreground="#E0E0E0")    
+                
+                self.txt_log.insert("end", full_msg, tag)
+                self.txt_log.see("end")
+                self.txt_log.configure(state="disabled")
+            except: pass
+            print(full_msg.strip())
         
-        tag = "info"
-        if any(x in msg for x in ["[錯誤]", "Error", "失敗", "系統錯誤"]):
-            tag = "error"
-        elif any(x in msg for x in ["[警告]", "Warning", "無效"]):
-            tag = "warning"
-        elif any(x in msg for x in ["成功", "完成", "啟動下載"]):
-            tag = "success"
-            
-        try:
-            self.txt_log.configure(state="normal")
-            
-            self.txt_log.tag_config("error", foreground="#FF5555")   
-            self.txt_log.tag_config("warning", foreground="#FFB86C") 
-            self.txt_log.tag_config("success", foreground="#50FA7B")
-            self.txt_log.tag_config("info", foreground="#E0E0E0")    
-            
-            self.txt_log.insert("end", full_msg, tag)
-            self.txt_log.see("end")
-            self.txt_log.configure(state="disabled")
-        except: pass
-        print(full_msg.strip())
+        # [Fix] 確保日誌更新在主線程執行
+        self.after(0, _log_ui_logic)
 
 
     def restart_app(self):
