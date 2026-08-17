@@ -64,7 +64,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         self.geometry("900x780") 
         
         # [Anti-Flicker] 啟動時完全透明，避免渲染過程被看見
-        self.attributes("-alpha", 0.0) 
+        self.attributes("-alpha", 1.0)
         
         # 設定應用程式圖示 (Runtime Icon)
         try:
@@ -193,9 +193,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         self.setup_about_ui()
 
         # --- Pre-load ALL Layouts (Stacking Strategy) ---
-        # 將所有頁面全部 grid 上去並疊加，解決切換閃爍
-        for f_name, f_frame in self.frames.items():
-            f_frame.grid(row=0, column=0, sticky="nsew")
+        # 只映射正在檢視的頁面，避免隱藏元件增加拖曳時的重繪負擔。
+        self._current_frame_name = None
         
         # 強制初始排版計算
         self.update_idletasks()
@@ -228,13 +227,13 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
 
         # 硬體加速偵測
         self.detected_gpu = None
-        self.check_hardware_acceleration()
+        self.after(6000, self.check_hardware_acceleration)
 
         # 啟動自動更新檢查 (延遲 2 秒，避免影響啟動速度)
-        self.after(2000, lambda: self.check_app_update(silent=True))
+        self.after(12000, lambda: self.check_app_update(silent=True))
         
         # 啟動核心組件 (yt-dlp) 背景更新檢查
-        self.after(5000, self.check_core_update_silent)
+        self.after(18000, self.check_core_update_silent)
         
         # 啟動監聽迴圈 (剪貼簿)
         self.last_clipboard_content = ""
@@ -244,7 +243,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         self.after(3000, self._scheduler_loop)
 
         # [Anti-Flicker] 所有 UI 已構建完成，等待充足時間確保完全渲染後再啟動淡入動畫
-        self.after(300, self._fade_in_window)
+        # 啟動時不播放透明度／位移動畫，讓視窗可立即流暢拖曳。
 
     def check_hardware_acceleration(self):
         def _task():
@@ -626,6 +625,12 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                     messagebox.showerror("核心遺失", "未安裝 yt-dlp 核心組件！\n無法進行分析或下載。\n\n請稍後在「設定」頁面點擊「檢查並更新」安裝。")
                     self.tab_view.set("設定")
                     
+                elif "DPAPI" in err_msg or "Failed to decrypt" in err_msg or "10927" in err_msg:
+                    messagebox.showwarning("Chrome/Edge Cookie 解密失敗",
+                        "Chrome 和 Edge 使用 Windows DPAPI 加密 Cookie，\n目前版本的 yt-dlp 無法直接讀取。\n\n解決方法：\n"
+                        "① 改用 Firefox（若已在 Firefox 登入 YouTube）\n"
+                        "② 或在 Cookie 設定改用「貼上模式」\n   （用瀏覽器擴充功能「Get cookies.txt LOCALLY」匯出）")
+                    
                 elif "Sign in" in err_msg: messagebox.showwarning("驗證失敗", "YouTube 拒絕連線。\n請到 [高級選項] 勾選瀏覽器後再試一次。")
             else:
                 self.last_fetched_info = info
@@ -890,6 +895,30 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
 
         self.after(0, self.update_queue_ui)
 
+    def _sync_current_toast_position(self, event=None):
+        """只在目前通知存在時，隨主視窗移動它的位置。"""
+        if event is not None and event.widget != self:
+            return
+
+        top = getattr(self, "current_toast", None)
+        if not top:
+            return
+
+        try:
+            if not top.winfo_exists():
+                if self.current_toast == top:
+                    self.current_toast = None
+                return
+
+            tx = self.winfo_x() + self.winfo_width() - 260
+            ty = self.winfo_y() + 60
+            target_geometry = f"240x45+{tx}+{ty}"
+            if getattr(self, "_toast_geometry", None) != target_geometry:
+                top.geometry(target_geometry)
+                self._toast_geometry = target_geometry
+        except Exception:
+            pass
+
     def show_toast(self, message, duration=2000, color="#01814A"):
         """顯示頂層懸浮通知 (使用 Toplevel + Transparent Color 實現真去背圓角)"""
         if getattr(self, 'is_loading_config', False): return  # 設定載入中不顯示通知
@@ -955,6 +984,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
         # 顯示
         top.attributes("-alpha", 1.0)
         self.current_toast = top
+        self._toast_geometry = None
 
         # 5. 自動關閉與淡出動畫
         def start_fade_out():
@@ -990,8 +1020,11 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper, AppLayoutMixin, TaskLayoutMixin):
                 top.geometry(f"240x45+{tx}+{ty}")
             except: pass
         
-        # Bind configure event to main window
-        self.bind("<Configure>", _sync_pos, add="+")
+        # 只註冊一個 Configure handler；若每個 toast 都 bind 一次，拖曳時
+        # 所有舊 callback 都會被呼叫，效能會隨使用時間下降。
+        if not getattr(self, "_toast_position_binding_installed", False):
+            self.bind("<Configure>", self._sync_current_toast_position, add="+")
+            self._toast_position_binding_installed = True
 
     def on_start_download(self):
         config = self.get_config_from_ui()

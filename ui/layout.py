@@ -197,11 +197,16 @@ class AppLayoutMixin(BasicTabMixin, VideoFormatMixin, LiveStreamMixin, SubtitleM
             if name in self.nav_indicators:
                 self.nav_indicators[name].configure(fg_color="#1F6AA5")
         
-        # Switch Frame using Stacking (Lift)
+        # 一次只保留目前頁面為 mapped 狀態；疊放所有頁面會讓未顯示元件
+        # 仍參與 Windows 的重繪。
         if name in self.frames:
-            # Ensure it is managed by grid (idempotent)
+            previous_name = getattr(self, "_current_frame_name", None)
+            if previous_name and previous_name != name and previous_name in self.frames:
+                self.frames[previous_name].grid_remove()
+
             self.frames[name].grid(row=0, column=0, sticky="nsew")
             self.frames[name].tkraise()
+            self._current_frame_name = name
             
     def change_appearance_mode_event(self, new_appearance_mode: str):
         ctk.set_appearance_mode(new_appearance_mode)

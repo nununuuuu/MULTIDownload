@@ -130,7 +130,7 @@ jobs:
               # 2. 移除所有 "**" 粗體標記
               $line = $line -replace "\*\*", ""
               # 3. 移除所有 "`" 行內程式碼標記
-              $line = $line -replace "`", ""
+              $line = $line -replace '`', ""
               # 4. 移除多餘的末尾空格
               $line.TrimEnd()
             }) -join "`n"

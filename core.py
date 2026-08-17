@@ -612,7 +612,11 @@ class YtDlpCore:
             'file_access_retries': 10,  # [Fix] 增加檔案存取重試次數 (防毒軟體鎖檔)
             'retries': 5,  # 網路重試
             'referer': 'https://www.youtube.com/',
+            # [Fix] 格式優先排序：解析度 > 檔案大小 > 畫格率
+            # 確保即使 fallback 到 best，也選最高畫質版本
+            'format_sort': ['res', 'filesize', 'fps'],
         }
+
         
         if config.get('proxy'): opts['proxy'] = config['proxy']
         
@@ -717,6 +721,7 @@ class YtDlpCore:
         # 2. 模式判斷
         if config['is_audio_only']:
             # --- 純音訊模式 ---
+            _saved_res_constraint = ''  # [Fix] 音訊模式無解析度限制
             opts['format'] = 'bestaudio/best'
             opts['postprocessors'] = [{
                 'key': 'FFmpegExtractAudio',
@@ -736,8 +741,9 @@ class YtDlpCore:
             res_constraint = ""
             if "Best" not in config['video_res']:
                 try:
-                     r = config['video_res'].split('p')[0]
-                     res_constraint = f"[height<={r}]"
+                     r = config['video_res'].split('p')[0].strip()  # [Fix] 去掉括號前的空格，如「2160p (4K)」
+                     if r.isdigit():
+                         res_constraint = f"[height<={r}]"
                 except: pass
 
             v_codecs = []
@@ -758,8 +764,13 @@ class YtDlpCore:
             elif is_av1_mode:
                 v_codecs.append(f"bestvideo{res_constraint}[vcodec^=av01]")
             
-            # 若為 Auto 或 H.265(需事後轉檔)，則先下載畫質最好的 (通常是 av1/vp9)
-            v_codecs.append(f"bestvideo{res_constraint}")
+            # [Fix] 只有 Auto 或 H.265 模式才追加無 codec 限制的 bestvideo 作為 fallback
+            # H264/VP9/AV1 模式若找不到指定 codec，應拋出 DownloadError 走分階段降級，
+            # 而不是靜默 fallback 到任意 codec（通常是 H264 低畫質預合併串流）
+            if not (is_h264_mode or is_vp9_mode or is_av1_mode):
+                # Auto 模式：下載畫質最好的 (通常 av1/vp9)
+                # H.265 模式：下載 bestvideo 後由 FFmpeg 轉檔
+                v_codecs.append(f"bestvideo{res_constraint}")
             
             a_codecs = []
             # 解析音訊編碼選擇
@@ -783,10 +794,14 @@ class YtDlpCore:
                 for a in a_codecs:
                     fmt_options.append(f"{v}+{a}")
             
-            fmt_options.append("best")
+            # [Fix] 不加 "best" fallback！
+            # 若加了 "best"，yt-dlp 在分離串流不可用時會「靜默」降到 360p 預合併串流，
+            # 完全繞過 DownloadError 和分階段降級邏輯。
+            # 現在讓格式不可用時正確拋出 DownloadError，由 _sabr_fallback_stage 接手。
             
             opts['format'] = "/".join(fmt_options)
             opts['merge_output_format'] = config['ext']
+            _saved_res_constraint = res_constraint  # [Fix] 儲存解析度限制供 SABR fallback 使用
 
             # Post-Processing Args for Merger/Converter
             merger_args = []
@@ -877,18 +892,25 @@ class YtDlpCore:
         success = False
         message = ""
         max_retries = 5
+        # [Fix] 記錄使用者原始設定的 format，用於分階段降級
+        original_format = opts.get('format', 'best')
+        original_merge_format = opts.get('merge_output_format')
+        _sabr_fallback_stage = 0  # 0=原始, 1=去掉codec限制, 2=去掉解析度限制, 3=best
+        _is_format_retry = False  # [Fix] 標記此次是格式降級重試（不算 WinError 重試，不等待）
         for attempt in range(max_retries):
             try:
-                if attempt == 0:
-                    if log_callback: log_callback(f"啟動下載: {config['url']}")
+                if attempt == 0 or _is_format_retry:
+                    # 第一次啟動，或格式降級重試（不顯示「被佔用」訊息，不等待）
+                    if attempt == 0:
+                        if log_callback: log_callback(f"啟動下載: {config['url']}")
+                    _is_format_retry = False  # 重置旗標
                 else:
-                    if log_callback: log_callback(f"檔案被佔用或下載失敗，等待系統釋放資源 ({attempt}/{max_retries})...")
-                    time.sleep(5) # [UPGRADE] 延長等待時間至 5秒，讓 Antivirus 有時間掃描完釋放
+                    if log_callback: log_callback(f"檔案被佔用或網路錯誤，等待系統釋放資源 ({attempt}/{max_retries})...")
+                    time.sleep(5) # 讓 Antivirus 有時間掃描完釋放
                     
-                    # 嘗試清理可能殘留的暫存檔 (雖難以精確預測檔名，但可依賴 yt-dlp 的 overwrites)
-
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(config['url'], download=True)
+
                 
                 # [Fix] 下載成功後，用 mutagen 修正 MP4/M4A 的日期標籤
                 if info and config.get('add_metadata'):
@@ -953,17 +975,44 @@ class YtDlpCore:
                     message = "下載已取消"
                     break
                 elif "requested format is not available" in err_msg.lower():
-                    # [Fix] YouTube SABR 格式問題：自動降級為最寬鬆的格式重試
-                    if opts.get('format') != 'best':
-                        if log_callback: log_callback(f"[警告] 指定格式不可用 (可能是 YouTube SABR 串流限制)，自動降級為最佳可用格式重試...")
-                        opts['format'] = 'best'
-                        # 移除可能衝突的合併格式設定
-                        opts.pop('merge_output_format', None)
+                    # [Fix] YouTube SABR 格式問題：分階段降級，避免用戶設定被完全忽略
+                    _sabr_fallback_stage += 1
+                    
+                    if _sabr_fallback_stage == 1:
+                        # 第一階段：去掉 codec 限制，但保留解析度
+                        # 使用 _saved_res_constraint 而非 locals()，避免 exception scope 問題
+                        _fallback_fmt = f"bestvideo{_saved_res_constraint}+bestaudio"
+                        if log_callback: log_callback(f"[警告] 指定的編碼在此影片不可用，移除 Codec 限制並保留解析度 ({_saved_res_constraint or '最佳'}) 重試...")
+                        opts['format'] = _fallback_fmt
+                        _is_format_retry = True
                         continue
+                    elif _sabr_fallback_stage == 2:
+                        # 第二階段：去掉解析度限制，下載最佳可用畫質
+                        if log_callback: log_callback(f"[警告] 指定解析度不可用 (可能是平台限制或 SABR 串流)，移除解析度限制重試...")
+                        opts['format'] = "bestvideo+bestaudio"
+                        _is_format_retry = True
+                        continue
+                    elif _sabr_fallback_stage >= 3:
+                        # 最後階段：降級到 best (單一合併串流)
+                        if opts.get('format') != 'best':
+                            if log_callback: log_callback(f"[警告] 所有分離串流格式均不可用，最終降級為單一最佳串流 (畫質可能低於預期)...")
+                            opts['format'] = 'best'
+                            opts.pop('merge_output_format', None)
+                            _is_format_retry = True
+                            continue
+                        else:
+                            message = f"下載錯誤: 無可用格式 ({err_msg})"
+                            break
                     else:
                         message = f"下載錯誤: 無可用格式 ({err_msg})"
                         break
+                elif "DPAPI" in err_msg or "Failed to decrypt" in err_msg or "10927" in err_msg:
+                    # [Fix] Chrome/Edge DPAPI 加密導致 Cookie 無法讀取
+                    if log_callback: log_callback("[錯誤] Chrome/Edge Cookie 解密失敗 (DPAPI 加密限制)\n→ 建議：① 改用 Firefox  ② 或用瀏覽器擴充功能匯出 cookies.txt 再貼上")
+                    message = "Cookie 解密失敗 (DPAPI)！\n\n建議：\n① 改用 Firefox（若已在 Firefox 登入 YouTube）\n② 或使用「貼上 Cookie」模式（用擴充功能「Get cookies.txt LOCALLY」匯出）"
+                    break
                 elif "416" in err_msg or "requested range not satisfiable" in err_msg.lower():
+
                     # [Fix] HTTP 416: 殘留的 .part 檔案導致續傳範圍無效
                     if log_callback: log_callback(f"[警告] HTTP 416: 暫存檔與伺服器不一致，正在清理殘檔並重新下載...")
                     # 清理所有可能的暫存檔

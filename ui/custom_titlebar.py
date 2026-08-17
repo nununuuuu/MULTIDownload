@@ -113,12 +113,108 @@ def setup_custom_titlebar(self):
     self.lbl_title.pack(side="left", padx=(0, 15))
     
 
+    # 2026.08.18-dragfix1
+    # Low-latency custom drag:
+    # Do not enter Windows WM_NCLBUTTONDOWN/HTCAPTION modal move loop.
+    # Poll the current cursor position at a fixed cadence and move the HWND
+    # directly to the newest position, so old mouse positions never build up
+    # into a backlog on slower computers.
+    self._drag_poll_active = False
+    self._drag_poll_after = None
+    self._drag_poll_interval_ms = 16  # ~60 Hz
+
+    def _drag_tick():
+        if not getattr(self, "_drag_poll_active", False):
+            return
+
+        try:
+            from ctypes import windll, Structure, c_long, byref
+
+            VK_LBUTTON = 0x01
+            SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+
+            class POINT(Structure):
+                _fields_ = [("x", c_long), ("y", c_long)]
+
+            user32 = windll.user32
+            pt = POINT()
+            user32.GetCursorPos(byref(pt))
+
+            target_x = self._drag_window0[0] + (pt.x - self._drag_cursor0[0])
+            target_y = self._drag_window0[1] + (pt.y - self._drag_cursor0[1])
+
+            user32.SetWindowPos(
+                self._drag_hwnd, 0,
+                int(target_x), int(target_y), 0, 0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+            )
+
+            # Stop as soon as the physical left button is released.
+            if not (user32.GetAsyncKeyState(VK_LBUTTON) & 0x8000):
+                self._drag_poll_active = False
+
+                # One final placement at the newest cursor coordinate ensures
+                # the window never keeps "catching up" after mouse release.
+                user32.GetCursorPos(byref(pt))
+                final_x = self._drag_window0[0] + (pt.x - self._drag_cursor0[0])
+                final_y = self._drag_window0[1] + (pt.y - self._drag_cursor0[1])
+                user32.SetWindowPos(
+                    self._drag_hwnd, 0,
+                    int(final_x), int(final_y), 0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+                )
+                self._drag_poll_after = None
+                return
+
+        except Exception as e:
+            print(f"Drag Error: {e}")
+            self._drag_poll_active = False
+            self._drag_poll_after = None
+            return
+
+        self._drag_poll_after = self.after(
+            self._drag_poll_interval_ms,
+            _drag_tick
+        )
+
     def move_window(event):
         try:
-            from ctypes import windll
-            hwnd = windll.user32.GetParent(self.winfo_id())
-            windll.user32.ReleaseCapture()
-            windll.user32.PostMessageW(hwnd, 0xA1, 2, 0)
+            # Keep current maximized behavior untouched in this checkpoint.
+            # Maximize/restore is intentionally deferred to later versions.
+            if getattr(self, "is_maximized", False):
+                return
+
+            from ctypes import windll, Structure, c_long, byref
+
+            class POINT(Structure):
+                _fields_ = [("x", c_long), ("y", c_long)]
+
+            class RECT(Structure):
+                _fields_ = [
+                    ("left", c_long), ("top", c_long),
+                    ("right", c_long), ("bottom", c_long)
+                ]
+
+            user32 = windll.user32
+            hwnd = user32.GetParent(self.winfo_id())
+            pt = POINT()
+            rc = RECT()
+
+            user32.GetCursorPos(byref(pt))
+            user32.GetWindowRect(hwnd, byref(rc))
+
+            self._drag_hwnd = hwnd
+            self._drag_cursor0 = (pt.x, pt.y)
+            self._drag_window0 = (rc.left, rc.top)
+            self._drag_poll_active = True
+
+            # Start on the next idle turn; no synchronous modal Win32 call,
+            # so this path does not create the GIL/re-entrancy crash seen in
+            # the discarded Candidate 1 experiment.
+            self.after_idle(_drag_tick)
+
         except Exception as e:
             print(f"Drag Error: {e}")
 

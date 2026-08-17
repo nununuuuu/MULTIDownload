@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['c:\\mypython\\MULTIDownload\\main.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('c:\\mypython\\MULTIDownload\\icon', 'icon')],
-    hiddenimports=['mutagen', 'brotli', 'certifi', 'requests', 'urllib3', 'websockets', 'sqlite3', 'optparse', 'email', 'http.client', 'http.cookies', 'http.cookiejar', 'xml.etree.ElementTree', 'pycryptodomex', 'ctypes', 'curl_cffi', 'hmac', 'html', 'html.entities', 'html.parser', 'http.server', 'mimetypes', 'typing', 'fileinput', 'inspect', 'platform', 'shlex', 'textwrap', 'difflib', 'threading', 'subprocess', 'yt_dlp_ejs', 'yt_dlp_ejs.yt', 'yt_dlp_ejs.yt.solver', 'secretstorage', 'PIL', 'PIL.Image', 'PIL.ImageTk', 'sysconfig'],
+    datas=[('icon', 'icon')],
+    hiddenimports=['mutagen', 'brotli', 'certifi', 'requests', 'urllib3', 'websockets', 'curl_cffi', 'pycryptodomex', 'yt_dlp_ejs', 'yt_dlp_ejs.yt', 'yt_dlp_ejs.yt.solver', 'secretstorage', 'PIL', 'PIL.Image', 'PIL.ImageTk'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -32,7 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['c:\\mypython\\MULTIDownload\\icon\\1.ico'],
+    icon=['icon\\1.ico'],
 )
 coll = COLLECT(
     exe,
